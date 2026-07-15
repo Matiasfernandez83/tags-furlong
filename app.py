@@ -7,6 +7,9 @@ from openpyxl import load_workbook, Workbook
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "cambiar-en-produccion")
+app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024  # tope de subida: 25 MB
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
+                  SESSION_COOKIE_SECURE=bool(os.environ.get("RENDER")))
 DB = os.environ.get("DB_PATH", "furlong.db")
 
 # ================= BASE DE DATOS =================
@@ -63,9 +66,16 @@ def norm_monto(v):
     try: return float(s)
     except ValueError: return 0.0
 
+RE_FECHA = re.compile(r"\b(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})\b")
+
 def fmt_fecha(v):
     if isinstance(v, datetime): return v.strftime("%d/%m/%Y")
-    return str(v or "").strip()[:10]
+    m = RE_FECHA.search(str(v or ""))
+    if not m: return str(v or "").strip()[:10]
+    d, mo, y = re.split(r"[/.\-]", m.group(1))
+    if len(y) == 2: y = "20" + y
+    try: return f"{int(d):02d}/{int(mo):02d}/{int(y):04d}"
+    except ValueError: return m.group(1)
 
 def pesos(n):
     return f"${n:,.2f}".replace(",", "@").replace(".", ",").replace("@", ".")
@@ -109,13 +119,15 @@ def mapear_columnas(filas, campos):
 # ================= EXTRACCION PDF (sin IA) =================
 RE_MONTO = re.compile(r"\$?\s*\d{1,3}(?:\.\d{3})*,\d{2}|\$?\s*\d+,\d{2}")
 RE_TAG = re.compile(r"\b[A-Z]{0,4}\d{8,14}\b")
-RE_FECHA = re.compile(r"\b(\d{2}/\d{2}/(?:\d{4}|\d{2}))\b")
 RE_TOTAL = re.compile(r"(TOTAL\s+GRAVADO|SUBTOTAL|IMPORTE\s+TOTAL|TOTAL)\D*?([\d.,]+,\d{2})", re.I)
 RE_TOTAL_TARJETA = re.compile(r"(TOTAL\s+A\s+PAGAR|SALDO\s+ACTUAL|TOTAL\s+CONSUMOS|PAGO\s+TOTAL)\D*?([\d.,]+,\d{2})", re.I)
-RE_PERIODO = re.compile(r"(CIERRE|PERIODO|RESUMEN)\D{0,20}(\d{2}/\d{2}/(?:\d{4}|\d{2}))", re.I)
-RE_VENC = re.compile(r"(VENCIMIENTO|VENCE|VTO)\D{0,20}(\d{2}/\d{2}/(?:\d{4}|\d{2}))", re.I)
+RE_PERIODO = re.compile(r"(CIERRE|PERIODO|RESUMEN)\D{0,20}(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})", re.I)
+RE_VENC = re.compile(r"(VENCIMIENTO|VENCE|VTO)\D{0,20}(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})", re.I)
 BANCOS = ["GALICIA", "SANTANDER", "BBVA", "MACRO", "NACION", "PROVINCIA", "ICBC", "HSBC",
-          "PATAGONIA", "SUPERVIELLE", "CREDICOOP", "VISA", "MASTERCARD", "AMEX", "AMERICAN EXPRESS", "NARANJA"]
+          "PATAGONIA", "SUPERVIELLE", "CREDICOOP", "COMAFI", "ITAU", "CITI", "BIND", "HIPOTECARIO",
+          "CIUDAD", "SANTA FE", "CORDOBA", "ENTRE RIOS", "SAN JUAN", "ROELA", "COLUMBIA",
+          "BRUBANK", "UALA", "UALÁ", "MERCADO PAGO", "MERCADOPAGO", "REBA", "WILOBANK",
+          "VISA", "MASTERCARD", "MAESTRO", "AMEX", "AMERICAN EXPRESS", "CABAL", "NARANJA", "CENCOSUD"]
 
 def texto_pdf(archivo):
     import pdfplumber
@@ -129,9 +141,13 @@ def texto_pdf(archivo):
 
 def categorizar(desc):
     d = desc.upper()
-    if any(k in d for k in ("PEAJE", "AUSA", "AUSOL", "AUTOPISTA", "TELEPASE", "AUBASA", "CORREDOR", "PASE")): return "PEAJE"
-    if any(k in d for k in ("YPF", "AXION", "SHELL", "PUMA", "GNC", "COMBUSTIBLE", "NAFTA", "GASOIL")): return "COMBUSTIBLE"
-    if any(k in d for k in ("SERVICE", "TALLER", "REPUESTO", "GOMERIA", "NEUMATICO", "LUBRICANTE")): return "MANTENIMIENTO"
+    if any(k in d for k in ("PEAJE", "AUSA", "AUSOL", "AUTOPISTA", "TELEPASE", "TELEPEAJE", "AUBASA",
+        "CORREDOR VIAL", "RICCHERI", "ILLIA", "DELLEPIANE", "ACCESO OESTE", "ACCESO NORTE",
+        "CAMINOS DEL", "AUTOPISTAS DEL", "RUTAS DEL", "PANAMERICANA", "PASE URBANO")): return "PEAJE"
+    if any(k in d for k in ("YPF", "AXION", "SHELL", "PUMA", "GNC", "COMBUSTIBLE", "NAFTA", "GASOIL",
+        "REFINOR", "ESTACION DE SERVICIO", "LUBRICANTES YPF")): return "COMBUSTIBLE"
+    if any(k in d for k in ("SERVICE", "TALLER", "REPUESTO", "GOMERIA", "NEUMATICO", "LUBRICANTE",
+        "MECANIC", "FILTRO", "ACEITE", "AUTOELEVADOR", "CUBIERTA")): return "MANTENIMIENTO"
     return "GASTO"
 
 def parsear_pdf_peajes(archivo):
@@ -144,7 +160,7 @@ def parsear_pdf_peajes(archivo):
         if v > 0 and (p < prioridad or (p == prioridad and v > total_doc)):
             total_doc, prioridad = v, p
     m = RE_FECHA.search(texto)
-    fecha_doc = m.group(1) if m else ""
+    fecha_doc = fmt_fecha(m.group(1)) if m else ""
     items = []
     for linea in texto.split("\n"):
         lu = linea.upper()
@@ -158,7 +174,7 @@ def parsear_pdf_peajes(archivo):
         if monto <= 0: continue
         f = RE_FECHA.search(linea)
         concepto = re.sub(r"\s{2,}", " ", RE_FECHA.sub("", RE_MONTO.sub("", RE_TAG.sub("", linea)))).strip(" -|$") or "Peaje"
-        items.append({"fecha": f.group(1) if f else fecha_doc, "tag": tag,
+        items.append({"fecha": fmt_fecha(f.group(1)) if f else fecha_doc, "tag": tag,
                       "concepto": concepto[:80], "monto": monto})
     return items, total_doc
 
@@ -167,12 +183,16 @@ def parsear_pdf_tarjeta(archivo):
     tu = texto.upper()
     banco = next((b for b in BANCOS if b in tu), "Banco")
     titular = ""
-    m = re.search(r"TITULAR\W{0,5}([A-ZÑÁÉÍÓÚ ,.]{4,40})", tu)
-    if m: titular = m.group(1).strip().title()
+    for pat in (r"TITULAR\W{0,5}([A-ZÑÁÉÍÓÚ][A-ZÑÁÉÍÓÚ ,.]{3,40})",
+                r"SR[A]?\.?\W{1,3}([A-ZÑÁÉÍÓÚ][A-ZÑÁÉÍÓÚ ,.]{3,40})"):
+        m = re.search(pat, tu)
+        if m:
+            titular = re.sub(r"\s{2,}", " ", m.group(1)).strip(" ,.").title()
+            break
     m = RE_PERIODO.search(texto)
-    periodo = m.group(2) if m else (RE_FECHA.search(texto).group(1) if RE_FECHA.search(texto) else "")
+    periodo = fmt_fecha(m.group(2)) if m else (fmt_fecha(RE_FECHA.search(texto).group(1)) if RE_FECHA.search(texto) else "")
     m = RE_VENC.search(texto)
-    venc = m.group(2) if m else "-"
+    venc = fmt_fecha(m.group(2)) if m else "-"
     total = 0.0
     for m in RE_TOTAL_TARJETA.finditer(texto):
         total = max(total, norm_monto(m.group(2)))
@@ -187,7 +207,7 @@ def parsear_pdf_tarjeta(archivo):
         if monto <= 0: continue
         desc = re.sub(r"\s{2,}", " ", RE_MONTO.sub("", RE_FECHA.sub("", linea))).strip(" -|$*")
         if len(desc) < 3: continue
-        items.append({"fecha": f.group(1), "concepto": desc[:80],
+        items.append({"fecha": fmt_fecha(f.group(1)), "concepto": desc[:80],
                       "categoria": categorizar(desc), "monto": monto})
     return {"banco": banco.title(), "titular": titular, "periodo": periodo,
             "vencimiento": venc, "total": total}, items
@@ -195,6 +215,7 @@ def parsear_pdf_tarjeta(archivo):
 def extraer_items_peajes(arch, contenido):
     if arch.filename.lower().endswith(".pdf"):
         return parsear_pdf_peajes(io.BytesIO(contenido))
+    arch.seek(0)
     filas = leer_filas(arch)
     mapa, inicio = mapear_columnas(filas, ["fecha", "tag", "patente", "concepto", "monto"])
     if not mapa or "monto" not in mapa:
@@ -235,6 +256,10 @@ def login():
 @app.route("/salir")
 def salir():
     session.clear(); return redirect("/login")
+
+@app.errorhandler(413)
+def archivo_muy_grande(_):
+    return "El archivo supera el limite permitido (25 MB). Dividilo o comprimilo.", 413
 
 # ================= 1) TABLERO =================
 @app.route("/")
@@ -291,15 +316,22 @@ def movimientos():
         grupos = d.execute("""SELECT COALESCE(NULLIF(dueno,''),'Sin asignar') g, COUNT(*) n,
             SUM(monto) t, COUNT(DISTINCT patente) sub FROM movimientos GROUP BY 1 ORDER BY t DESC""").fetchall()
         return render_template("movimientos.html", vista=vista, grupos=grupos, q=q, movs=[], etiqueta="Responsable")
-    sql, args, conds = "SELECT * FROM movimientos", [], []
+    filtro = request.args.get("filtro", "")
+    args, conds = [], []
     if q:
         conds.append("(tag LIKE ? OR patente LIKE ? OR dueno LIKE ? OR concepto LIKE ?)")
         args += [f"%{q}%"] * 4
     if dueno:
         conds.append("COALESCE(NULLIF(dueno,''),'Sin asignar')=?"); args.append(dueno)
-    if conds: sql += " WHERE " + " AND ".join(conds)
-    movs = d.execute(sql + " ORDER BY id DESC LIMIT 500", args).fetchall()
-    return render_template("movimientos.html", vista="detalle", movs=movs, q=q or dueno, grupos=[])
+    if filtro == "verificado":
+        conds.append("verificado=1")
+    elif filtro == "sinmatch":
+        conds.append("verificado=0")
+    where = (" WHERE " + " AND ".join(conds)) if conds else ""
+    movs = d.execute("SELECT * FROM movimientos" + where + " ORDER BY id DESC LIMIT 500", args).fetchall()
+    resumen = d.execute("SELECT COUNT(*) n, COALESCE(SUM(monto),0) t FROM movimientos" + where, args).fetchone()
+    return render_template("movimientos.html", vista="detalle", movs=movs, q=q or dueno,
+                           qtext=q, dueno=dueno, filtro=filtro, resumen=resumen, grupos=[])
 
 @app.route("/movimientos/borrar", methods=["POST"])
 def borrar_movimientos():
