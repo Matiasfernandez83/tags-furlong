@@ -1,4 +1,4 @@
-# TAGs Transporte Furlong - Version unificada. Flask + SQLite + pdfplumber. Sin IA, sin API keys.
+# TAGs Transporte Furlong - Flask + pdfplumber. BD: SQLite (dev) o PostgreSQL (prod, via DATABASE_URL). Sin IA, sin API keys.
 import csv, io, os, re, sqlite3, base64, json
 from datetime import datetime
 from flask import Flask, g, request, redirect, session, render_template, send_file, flash, jsonify
@@ -10,13 +10,57 @@ app.secret_key = os.environ.get("SECRET_KEY", "cambiar-en-produccion")
 app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024  # tope de subida: 25 MB
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
                   SESSION_COOKIE_SECURE=bool(os.environ.get("RENDER")))
+
+# ================= BASE DE DATOS (SQLite en dev / PostgreSQL en produccion) =================
+# Si existe DATABASE_URL (p.ej. la conexion de Supabase en Render) se usa PostgreSQL;
+# si no, se cae a un archivo SQLite local. El resto del codigo es agnostico al motor.
+DATABASE_URL = os.environ.get("DATABASE_URL")
+USE_PG = bool(DATABASE_URL)
 DB = os.environ.get("DB_PATH", "furlong.db")
 
-# ================= BASE DE DATOS =================
+if USE_PG:
+    import psycopg2, psycopg2.extras
+
+    class _Cur:
+        """Envuelve un cursor de psycopg2 imitando la API de sqlite3 (fetchone/all, iter, lastrowid)."""
+        def __init__(self, c): self._c = c
+        def fetchone(self): return self._c.fetchone()
+        def fetchall(self): return self._c.fetchall()
+        def __iter__(self): return iter(self._c.fetchall())
+
+    class PGConn:
+        """Conexion PostgreSQL con la misma interfaz que se usa sobre sqlite3."""
+        def __init__(self):
+            kw = {}
+            if "sslmode=" not in DATABASE_URL and not any(h in DATABASE_URL for h in ("localhost", "127.0.0.1")):
+                kw["sslmode"] = "require"
+            self._conn = psycopg2.connect(DATABASE_URL, **kw)
+        def execute(self, sql, params=()):
+            cur = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute(sql.replace("?", "%s"), params)
+            return _Cur(cur)
+        def executemany(self, sql, seq):
+            cur = self._conn.cursor(); cur.executemany(sql.replace("?", "%s"), list(seq)); cur.close()
+        def executescript(self, sql):
+            cur = self._conn.cursor(); cur.execute(sql); cur.close()
+        def commit(self): self._conn.commit()
+        def rollback(self): self._conn.rollback()
+        def close(self): self._conn.close()
+
+    INTEGRITY_ERRORS = (sqlite3.IntegrityError, psycopg2.IntegrityError)
+else:
+    INTEGRITY_ERRORS = (sqlite3.IntegrityError,)
+
+def _conectar():
+    if USE_PG:
+        return PGConn()
+    con = sqlite3.connect(DB)
+    con.row_factory = sqlite3.Row
+    return con
+
 def db():
     if "db" not in g:
-        g.db = sqlite3.connect(DB)
-        g.db.row_factory = sqlite3.Row
+        g.db = _conectar()
     return g.db
 
 @app.teardown_appcontext
@@ -24,25 +68,30 @@ def close_db(_):
     d = g.pop("db", None)
     if d: d.close()
 
-def init_db():
-    con = sqlite3.connect(DB)
-    con.executescript("""
-    CREATE TABLE IF NOT EXISTS usuarios(id INTEGER PRIMARY KEY, email TEXT UNIQUE,
+def _esquema():
+    pk = "SERIAL PRIMARY KEY" if USE_PG else "INTEGER PRIMARY KEY"
+    real = "DOUBLE PRECISION" if USE_PG else "REAL"
+    return f"""
+    CREATE TABLE IF NOT EXISTS usuarios(id {pk}, email TEXT UNIQUE,
         clave TEXT, nombre TEXT, rol TEXT DEFAULT 'operador');
-    CREATE TABLE IF NOT EXISTS flota(id INTEGER PRIMARY KEY, tag TEXT, patente TEXT,
+    CREATE TABLE IF NOT EXISTS flota(id {pk}, tag TEXT, patente TEXT,
         dueno TEXT, equipo TEXT, estado TEXT, marca TEXT);
-    CREATE TABLE IF NOT EXISTS movimientos(id INTEGER PRIMARY KEY, fecha TEXT, tag TEXT,
-        patente TEXT, concepto TEXT, monto REAL, dueno TEXT, equipo TEXT,
+    CREATE TABLE IF NOT EXISTS movimientos(id {pk}, fecha TEXT, tag TEXT,
+        patente TEXT, concepto TEXT, monto {real}, dueno TEXT, equipo TEXT,
         verificado INTEGER DEFAULT 0, archivo TEXT, creado TEXT);
-    CREATE TABLE IF NOT EXISTS archivos(nombre TEXT PRIMARY KEY, tipo TEXT,
-        total_doc REAL DEFAULT 0, contenido TEXT, mime TEXT, creado TEXT);
-    CREATE TABLE IF NOT EXISTS resumenes(id INTEGER PRIMARY KEY, archivo TEXT, banco TEXT,
-        titular TEXT, periodo TEXT, vencimiento TEXT, total_resumen REAL, creado TEXT);
-    CREATE TABLE IF NOT EXISTS gastos(id INTEGER PRIMARY KEY, resumen_id INTEGER,
-        fecha TEXT, concepto TEXT, categoria TEXT, monto REAL);
+    CREATE TABLE IF NOT EXISTS archivos(id {pk}, nombre TEXT UNIQUE, tipo TEXT,
+        total_doc {real} DEFAULT 0, contenido TEXT, mime TEXT, creado TEXT);
+    CREATE TABLE IF NOT EXISTS resumenes(id {pk}, archivo TEXT, banco TEXT,
+        titular TEXT, periodo TEXT, vencimiento TEXT, total_resumen {real}, creado TEXT);
+    CREATE TABLE IF NOT EXISTS gastos(id {pk}, resumen_id INTEGER,
+        fecha TEXT, concepto TEXT, categoria TEXT, monto {real});
     CREATE INDEX IF NOT EXISTS idx_mov_tag ON movimientos(tag);
     CREATE INDEX IF NOT EXISTS idx_flota_tag ON flota(tag);
-    """)
+    """
+
+def init_db():
+    con = _conectar()
+    con.executescript(_esquema())
     if not con.execute("SELECT 1 FROM usuarios").fetchone():
         con.execute("INSERT INTO usuarios(email,clave,nombre,rol) VALUES(?,?,?,?)",
                     ("admin@transportefurlong.com.ar", generate_password_hash("admin"),
@@ -232,9 +281,11 @@ def extraer_items_peajes(arch, contenido):
 
 def guardar_archivo(nombre, tipo, total_doc, contenido, mime):
     b64 = base64.b64encode(contenido).decode() if contenido else ""
-    db().execute("""INSERT OR REPLACE INTO archivos(nombre,tipo,total_doc,contenido,mime,creado)
-        VALUES(?,?,?,?,?,?)""", (nombre, tipo, total_doc, b64, mime,
-        datetime.now().strftime("%d/%m/%Y %H:%M")))
+    db().execute("""INSERT INTO archivos(nombre,tipo,total_doc,contenido,mime,creado)
+        VALUES(?,?,?,?,?,?)
+        ON CONFLICT(nombre) DO UPDATE SET tipo=EXCLUDED.tipo, total_doc=EXCLUDED.total_doc,
+        contenido=EXCLUDED.contenido, mime=EXCLUDED.mime, creado=EXCLUDED.creado""",
+        (nombre, tipo, total_doc, b64, mime, datetime.now().strftime("%d/%m/%Y %H:%M")))
 
 # ================= AUTENTICACION =================
 @app.before_request
@@ -285,8 +336,9 @@ def detalle(tipo):
         rows = d.execute("SELECT * FROM movimientos ORDER BY monto DESC LIMIT 1000").fetchall()
         titulo = "Monto total" if tipo == "monto" else "Operaciones"
     elif tipo == "camiones":
-        rows = d.execute("""SELECT * FROM movimientos WHERE patente!='' GROUP BY patente
-            ORDER BY SUM(monto) DESC""").fetchall()
+        rows = d.execute("""SELECT * FROM movimientos WHERE id IN (
+            SELECT MAX(id) FROM movimientos WHERE patente<>'' GROUP BY patente)
+            ORDER BY monto DESC""").fetchall()
         titulo = "Camiones activos"
     elif tipo == "duenos":
         rows = d.execute("""SELECT dueno, COUNT(*) n, SUM(monto) monto,
@@ -335,7 +387,7 @@ def movimientos():
 
 @app.route("/movimientos/borrar", methods=["POST"])
 def borrar_movimientos():
-    ids = request.form.getlist("ids")
+    ids = [int(i) for i in request.form.getlist("ids") if str(i).isdigit()]
     arch = request.form.get("archivo")
     d = db()
     if ids:
@@ -384,7 +436,7 @@ def importar():
             flash(msg)
         return redirect("/importar")
     flota_n = d.execute("SELECT COUNT(*) n FROM flota").fetchone()["n"]
-    archivos = d.execute("""SELECT m.archivo, COUNT(*) n, SUM(m.monto) t, COALESCE(a.total_doc,0) td
+    archivos = d.execute("""SELECT m.archivo, COUNT(*) n, SUM(m.monto) t, COALESCE(MAX(a.total_doc),0) td
         FROM movimientos m LEFT JOIN archivos a ON a.nombre=m.archivo
         GROUP BY m.archivo ORDER BY MAX(m.id) DESC""").fetchall()
     return render_template("importar.html", archivos=archivos, flota_n=flota_n)
@@ -445,9 +497,9 @@ def gastos():
             if not items:
                 raise ValueError("no se encontraron consumos en el resumen.")
             cur = d.execute("""INSERT INTO resumenes(archivo,banco,titular,periodo,vencimiento,total_resumen,creado)
-                VALUES(?,?,?,?,?,?,?)""", (arch.filename, meta["banco"], meta["titular"], meta["periodo"],
+                VALUES(?,?,?,?,?,?,?) RETURNING id""", (arch.filename, meta["banco"], meta["titular"], meta["periodo"],
                 meta["vencimiento"], meta["total"], datetime.now().isoformat()))
-            rid = cur.lastrowid
+            rid = cur.fetchone()["id"]
             d.executemany("INSERT INTO gastos(resumen_id,fecha,concepto,categoria,monto) VALUES(?,?,?,?,?)",
                           [(rid, i["fecha"], i["concepto"], i["categoria"], i["monto"]) for i in items])
             mime = "application/pdf" if arch.filename.lower().endswith(".pdf") else "application/vnd.ms-excel"
@@ -493,7 +545,7 @@ def reportes():
     d = db()
     n = d.execute("SELECT COUNT(*) n FROM movimientos").fetchone()["n"]
     ng = d.execute("SELECT COUNT(*) n FROM gastos").fetchone()["n"]
-    historial = d.execute("SELECT nombre,tipo,total_doc,creado FROM archivos ORDER BY rowid DESC").fetchall()
+    historial = d.execute("SELECT nombre,tipo,total_doc,creado FROM archivos ORDER BY id DESC").fetchall()
     return render_template("reportes.html", n=n, ng=ng, historial=historial)
 
 @app.route("/reportes/descargar/<path:nombre>")
@@ -542,7 +594,8 @@ def config():
         "movs": d.execute("SELECT COUNT(*) n FROM movimientos").fetchone()["n"],
         "gastos": d.execute("SELECT COUNT(*) n FROM gastos").fetchone()["n"],
         "flota": d.execute("SELECT COUNT(*) n FROM flota").fetchone()["n"],
-        "mb": round(os.path.getsize(DB) / 1048576, 2) if os.path.exists(DB) else 0,
+        "mb": (round(d.execute("SELECT pg_database_size(current_database()) s").fetchone()["s"] / 1048576, 2)
+               if USE_PG else (round(os.path.getsize(DB) / 1048576, 2) if os.path.exists(DB) else 0)),
     }
     return render_template("config.html", usuarios=usuarios, stats=stats)
 
@@ -571,8 +624,8 @@ def crear_usuario():
             db().execute("INSERT INTO usuarios(email,clave,nombre) VALUES(?,?,?)",
                          (email, generate_password_hash(clave), nombre))
             db().commit(); flash(f"Usuario {email} creado.")
-        except sqlite3.IntegrityError:
-            flash("Ese correo ya existe.")
+        except INTEGRITY_ERRORS:
+            db().rollback(); flash("Ese correo ya existe.")
     return redirect("/config")
 
 @app.route("/config/usuario/borrar/<int:uid>", methods=["POST"])

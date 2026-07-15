@@ -2,7 +2,7 @@
 
 Gestion de TAGs y peajes de flota. Lee facturas PDF (AUSA/AUSOL/TelePASE), extrae los pases,
 cruza cada TAG contra la base de flota y consolida gastos. **Sin IA, sin API keys.**
-Flask + SQLite + pdfplumber.
+Flask + pdfplumber. Base de datos: SQLite en local, PostgreSQL (Supabase) en produccion.
 
 ## Modulos
 - **Tablero**: KPIs con doble-click (abren detalle), graficos por responsable y verificacion de TAGs.
@@ -17,8 +17,10 @@ Flask + SQLite + pdfplumber.
 Abrir http://localhost:5000 — usuario inicial: admin@transportefurlong.com.ar / admin
 (cambiar la clave desde Configuracion apenas ingreses).
 
-## Deploy en Render
-El archivo `render.yaml` ya deja todo configurado (disco persistente incluido).
+## Deploy en Render (plan free) + Supabase
+El `render.yaml` deja el Web Service listo en plan **free** (sin disco pago). La base
+corre en **PostgreSQL gratuito de Supabase**. Pasos detallados en [`docs/DEPLOY.md`](docs/DEPLOY.md).
 - Build: pip install -r requirements.txt
-- Start: gunicorn app:app
-- SECRET_KEY se genera sola; DB_PATH apunta al disco persistente.
+- Start: gunicorn app:app --workers 1 --timeout 120
+- `SECRET_KEY` se genera sola; hay que cargar **`DATABASE_URL`** (conexion de Supabase)
+  a mano en el dashboard de Render.
