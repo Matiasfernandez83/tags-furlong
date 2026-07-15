@@ -23,11 +23,25 @@
 </div>
 {% else %}
 <div class="tarjeta">
-  <form class="linea" method="get" style="margin-bottom:14px">
-    <input type="text" name="q" value="{{ q }}" placeholder="Buscar patente, tag, equipo, responsable..." style="max-width:340px">
+  <form class="linea" method="get" style="margin-bottom:12px">
+    <input type="text" name="q" value="{{ qtext }}" placeholder="Buscar patente, tag, equipo, responsable..." style="max-width:340px">
+    {% if dueno %}<input type="hidden" name="dueno" value="{{ dueno }}">{% endif %}
+    {% if filtro %}<input type="hidden" name="filtro" value="{{ filtro }}">{% endif %}
     <button class="btn chico" type="submit">Buscar</button>
     <a class="btn chico lima" href="/exportar">Excel</a>
   </form>
+  {% set qs = ('&q=' ~ qtext|urlencode if qtext else '') ~ ('&dueno=' ~ dueno|urlencode if dueno else '') %}
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:14px">
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <a class="btn chico {{ 'sec' if not filtro else 'gh' }}" href="/movimientos?filtro={{ qs }}">Todos</a>
+      <a class="btn chico {{ 'sec' if filtro=='verificado' else 'gh' }}" href="/movimientos?filtro=verificado{{ qs }}">✔ Verificados</a>
+      <a class="btn chico {{ 'sec' if filtro=='sinmatch' else 'gh' }}" href="/movimientos?filtro=sinmatch{{ qs }}">⚠ Sin match</a>
+    </div>
+    <div style="display:flex;gap:22px;align-items:baseline">
+      <div><span style="font-size:20px;font-weight:900">{{ resumen.n }}</span> <span class="mini">registros</span></div>
+      <div><span style="font-size:20px;font-weight:900;color:var(--rojo)">{{ resumen.t|pesos }}</span> <span class="mini">total del filtro</span></div>
+    </div>
+  </div>
   <form method="post" action="/movimientos/borrar" onsubmit="return confirm('¿Eliminar los movimientos seleccionados?')">
   <div style="overflow-x:auto">
   <table>
