@@ -7,6 +7,9 @@ from openpyxl import load_workbook, Workbook
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "cambiar-en-produccion")
+app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024  # tope de subida: 25 MB
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
+                  SESSION_COOKIE_SECURE=bool(os.environ.get("RENDER")))
 DB = os.environ.get("DB_PATH", "furlong.db")
 
 # ================= BASE DE DATOS =================
@@ -253,6 +256,10 @@ def login():
 @app.route("/salir")
 def salir():
     session.clear(); return redirect("/login")
+
+@app.errorhandler(413)
+def archivo_muy_grande(_):
+    return "El archivo supera el limite permitido (25 MB). Dividilo o comprimilo.", 413
 
 # ================= 1) TABLERO =================
 @app.route("/")

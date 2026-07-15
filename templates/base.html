@@ -184,6 +184,7 @@ hr{border:0;border-top:1px solid var(--borde);margin:14px 0}
 </div>
 <script>
 function pesos(n){return '$'+Number(n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function cerrarModal(){document.getElementById('modal').classList.remove('abierto');}
 document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal')cerrarModal();});
 async function abrirDetalle(tipo,val){
@@ -198,10 +199,10 @@ async function abrirDetalle(tipo,val){
     let h='<table><thead><tr>';
     if(d.modo==='grupo'){
       h+='<th>Responsable</th><th class=num>Operaciones</th><th class=num>Patentes</th><th class=num>Monto</th></tr></thead><tbody>';
-      d.filas.forEach(f=>{h+=`<tr><td><b>${f.dueno}</b></td><td class=num>${f.n}</td><td class=num>${f.patentes}</td><td class=num>${pesos(f.monto)}</td></tr>`;});
+      d.filas.forEach(f=>{h+=`<tr><td><b>${esc(f.dueno)}</b></td><td class=num>${esc(f.n)}</td><td class=num>${esc(f.patentes)}</td><td class=num>${pesos(f.monto)}</td></tr>`;});
     }else{
       h+='<th>Fecha</th><th>TAG</th><th>Patente</th><th>Concepto</th><th>Responsable</th><th class=num>Monto</th></tr></thead><tbody>';
-      d.filas.forEach(f=>{h+=`<tr><td>${f.fecha||''}</td><td>${f.tag||''}</td><td>${f.patente||''}</td><td>${f.concepto||''}</td><td>${f.dueno||''}</td><td class=num>${pesos(f.monto)}</td></tr>`;});
+      d.filas.forEach(f=>{h+=`<tr><td>${esc(f.fecha)}</td><td>${esc(f.tag)}</td><td>${esc(f.patente)}</td><td>${esc(f.concepto)}</td><td>${esc(f.dueno)}</td><td class=num>${pesos(f.monto)}</td></tr>`;});
     }
     if(!d.filas.length)h+='<tr><td colspan=6 class=vacio>Sin registros.</td></tr>';
     h+='</tbody></table>';
