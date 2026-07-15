@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block cuerpo %}
+<h1>Importar datos</h1>
+<div class="dos" style="grid-template-columns:2fr 1fr">
+  <div class="tarjeta">
+    <h3>📤 Carga de documentos</h3>
+    <p class="mini" style="margin:8px 0 14px">Subí facturas de peajes en <b>PDF</b> (AUSA, AUSOL, TelePASE) o el detalle en Excel/CSV.
+    Se extraen los pases, se cruza cada TAG contra la base maestra por sus últimos 8 dígitos
+    y se valida la suma contra el total del documento (semáforo de control).</p>
+    <form method="post" enctype="multipart/form-data">
+      <div style="border:2px dashed #d4d4d8;border-radius:12px;padding:30px;text-align:center;background:#fafafa;margin-bottom:14px">
+        <div style="font-size:40px">📄</div>
+        <p style="font-weight:700;margin:8px 0">Seleccioná facturas AUSA o resúmenes</p>
+        <input type="file" name="archivo" accept=".pdf,.xlsx,.csv" required style="margin-top:8px">
+      </div>
+      <button class="btn" type="submit">Iniciar procesamiento</button>
+    </form>
+  </div>
+  <div class="tarjeta oscura">
+    <h3 style="color:#fff">🗄 Base maestra</h3>
+    <div style="font-size:34px;font-weight:900;margin:12px 0">{{ flota_n }}<span style="font-size:16px;font-weight:600"> camiones</span></div>
+    <a class="btn blanco" href="/flota" style="width:100%;justify-content:center">Actualizar flota</a>
+  </div>
+</div>
+
+<div class="tarjeta">
+  <h3 style="margin-bottom:14px">Archivos importados</h3>
+  <div style="overflow-x:auto">
+  <table>
+    <tr><th>Archivo</th><th class="num">Movs.</th><th class="num">Suma extraída</th><th class="num ocultar-mov">Total doc.</th><th>Control</th><th></th></tr>
+    {% for a in archivos %}
+    <tr>
+      <td>{{ a.archivo }}</td>
+      <td class="num">{{ a.n }}</td>
+      <td class="num">{{ a.t|pesos }}</td>
+      <td class="num ocultar-mov">{% if a.td %}{{ a.td|pesos }}{% else %}—{% endif %}</td>
+      <td>{% if not a.td %}<span class="no">s/control</span>{% elif (a.td - a.t)|abs < 1 %}<span class="ok">✔ OK</span>{% else %}<span style="color:#d97706;font-weight:700">⚠ dif {{ (a.td - a.t)|abs|pesos }}</span>{% endif %}</td>
+      <td class="num">
+        <form method="post" action="/movimientos/borrar" onsubmit="return confirm('¿Eliminar los movimientos de este archivo?')">
+          <input type="hidden" name="archivo" value="{{ a.archivo }}">
+          <button class="btn chico sec" type="submit">Eliminar</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}<tr><td colspan="6" class="vacio">Todavía no importaste archivos.</td></tr>{% endfor %}
+  </table>
+  </div>
+</div>
+{% endblock %}

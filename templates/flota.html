@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block cuerpo %}
+<h1>Base maestra de flota</h1>
+<div class="tarjeta">
+  <p class="mini">Subí el Excel de flota. Se detectan las columnas por encabezado (TAG, PATENTE, RESPONSABLE,
+  EQUIPO, ESTADO, MARCA), se deduplican los TAGs y se reemplaza la base completa.</p>
+  <form class="linea" method="post" enctype="multipart/form-data">
+    <input type="file" name="archivo" accept=".xlsx,.csv" required>
+    <button class="btn" type="submit">Actualizar base</button>
+    <a class="btn sec" href="/importar">← Volver a importar</a>
+  </form>
+</div>
+<div class="tarjeta">
+  <h3 style="margin-bottom:12px">{{ unidades|length }} unidades</h3>
+  <div style="overflow-x:auto">
+  <table>
+    <tr><th>TAG</th><th>Patente</th><th>Responsable</th><th class="ocultar-mov">Equipo</th><th class="ocultar-mov">Estado</th><th class="ocultar-mov">Marca</th></tr>
+    {% for u in unidades %}
+    <tr><td>{{ u.tag }}</td><td>{{ u.patente }}</td><td>{{ u.dueno }}</td>
+        <td class="ocultar-mov">{{ u.equipo }}</td><td class="ocultar-mov">{{ u.estado }}</td><td class="ocultar-mov">{{ u.marca }}</td></tr>
+    {% else %}<tr><td colspan="6" class="vacio">Base vacía. Subí el Excel de flota.</td></tr>{% endfor %}
+  </table>
+  </div>
+</div>
+{% endblock %}

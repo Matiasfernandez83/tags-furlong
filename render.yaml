@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: tags-furlong
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DB_PATH
+        value: /var/data/furlong.db
+    disk:
+      name: datos
+      mountPath: /var/data
+      sizeGB: 1

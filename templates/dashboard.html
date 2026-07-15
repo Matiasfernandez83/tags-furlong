@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block cuerpo %}
+<h1>Dashboard</h1>
+<p class="mini" style="margin-top:-14px;margin-bottom:18px">Doble-click en una tarjeta para ver el detalle completo</p>
+
+<div class="kpis">
+  <div class="kpi" ondblclick="abrirDetalle('monto')">
+    <div class="dot" style="background:#dcfce7;color:#16a34a">$</div>
+    <div class="l">Monto total</div>
+    <div class="v">{{ kpi.total|pesos }}</div>
+    <div class="s">Total facturado</div>
+  </div>
+  <div class="kpi" ondblclick="abrirDetalle('camiones')">
+    <div class="dot" style="background:#dbeafe;color:#3b82f6">🚚</div>
+    <div class="l">Camiones activos</div>
+    <div class="v">{{ kpi.patentes }}</div>
+    <div class="s">Patentes únicas detectadas</div>
+  </div>
+  <div class="kpi" ondblclick="abrirDetalle('duenos')">
+    <div class="dot" style="background:#f3e8ff;color:#a855f7">👥</div>
+    <div class="l">Responsables</div>
+    <div class="v">{{ kpi.duenos }}</div>
+    <div class="s">Proveedores distintos</div>
+  </div>
+  <div class="kpi" ondblclick="abrirDetalle('operaciones')">
+    <div class="dot" style="background:#ffedd5;color:#f97316">⚡</div>
+    <div class="l">Operaciones</div>
+    <div class="v">{{ kpi.n }}</div>
+    <div class="s">Registros procesados</div>
+  </div>
+</div>
+
+<div class="dos">
+  <div class="tarjeta">
+    <h3>Monto por responsable (Top 10)</h3>
+    <p class="mini">Hace click en una barra para ver el detalle</p>
+    {% for r in top %}
+    <a class="barra" href="/movimientos?dueno={{ r.dueno|urlencode }}" title="{{ r.n }} operaciones">
+      <span class="nombre">{{ r.dueno }}</span>
+      <div class="relleno" style="width:{{ (r.t / maximo * 100)|round(1) }}%"></div>
+      <span class="valor">{{ r.t|pesos }}</span>
+    </a>
+    {% else %}<p class="vacio">Sin datos. Importá un PDF de peajes para empezar.</p>{% endfor %}
+  </div>
+
+  <div class="tarjeta">
+    <h3>Distribución de operaciones</h3>
+    <p class="mini">Verificación de TAGs contra la base de flota</p>
+    {% for r in dist %}
+    <a class="barra" onclick="abrirDetalle('operaciones');return false;" href="#">
+      <span class="nombre">{{ r.k }}</span>
+      <div class="relleno {{ 'gris' if 'Sin' in r.k else 'azul' }}" style="width:{{ (r.n / kpi.n * 100)|round(1) if kpi.n else 0 }}%"></div>
+      <span class="valor">{{ r.n }} · {{ r.t|pesos }}</span>
+    </a>
+    {% else %}<p class="vacio">Sin datos.</p>{% endfor %}
+  </div>
+</div>
+
+<div class="tarjeta">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+    <h3>Movimientos recientes</h3>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <a class="btn chico sec" href="/movimientos">Detalle</a>
+      <a class="btn chico sec" href="/movimientos?vista=vehiculo">x Vehículo</a>
+      <a class="btn chico sec" href="/movimientos?vista=responsable">x Responsable</a>
+      <a class="btn chico lima" href="/exportar">Excel</a>
+    </div>
+  </div>
+  <div style="overflow-x:auto">
+  <table>
+    <tr><th>Fecha</th><th>Patente</th><th class="ocultar-mov">Equipo</th><th>Responsable</th><th>TAG</th><th>Control</th><th class="num">Monto</th></tr>
+    {% for m in ult %}
+    <tr>
+      <td>{{ m.fecha }}</td><td>{{ m.patente }}</td>
+      <td class="ocultar-mov">{{ m.equipo }}</td><td>{{ m.dueno }}</td><td>{{ m.tag }}</td>
+      <td class="{{ 'ok' if m.verificado else 'no' }}">{{ '✔' if m.verificado else '—' }}</td>
+      <td class="num">{{ m.monto|pesos }}</td>
+    </tr>
+    {% else %}<tr><td colspan="7" class="vacio">Sin movimientos todavía.</td></tr>{% endfor %}
+  </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block cuerpo %}
+<h1>Centro de reportes</h1>
+<p class="mini" style="margin-top:-14px;margin-bottom:18px">Descargá información histórica y gestioná tus archivos.</p>
+
+<div class="dos">
+  <a class="tarjeta" href="/exportar" style="text-decoration:none;color:inherit;background:#f0fdf4;border-color:#bbf7d0;text-align:center;padding:28px">
+    <div style="font-size:34px">📗</div>
+    <h3 style="color:#15803d;margin-top:8px">Descargar Excel maestro</h3>
+    <p class="mini">Todos los registros unificados (movimientos + gastos)</p>
+  </a>
+  <div class="tarjeta" style="background:#eff6ff;border-color:#bfdbfe;text-align:center;padding:28px">
+    <div style="font-size:34px">🗄</div>
+    <h3 style="color:#1d4ed8;margin-top:8px">{{ n }} movimientos · {{ ng }} gastos</h3>
+    <p class="mini">Almacenados en base de datos</p>
+  </div>
+</div>
+
+<div class="tarjeta">
+  <h3 style="margin-bottom:14px">🕘 Historial de archivos</h3>
+  <form method="post" action="/reportes/borrar" onsubmit="return confirm('¿Eliminar los archivos seleccionados y todos sus registros?')">
+  <div style="overflow-x:auto">
+  <table>
+    <tr>
+      <th style="width:30px"><input type="checkbox" onclick="document.querySelectorAll('.chk').forEach(c=>c.checked=this.checked)"></th>
+      <th>Nombre del archivo</th><th class="ocultar-mov">Fecha subida</th><th>Tipo</th><th class="num">Total doc.</th><th>Acciones</th>
+    </tr>
+    {% for a in historial %}
+    <tr>
+      <td><input type="checkbox" class="chk" name="nombres" value="{{ a.nombre }}"></td>
+      <td>{{ a.nombre }}</td>
+      <td class="ocultar-mov" style="color:#a1a1aa">{{ a.creado }}</td>
+      <td><span class="chip">{{ a.tipo }}</span></td>
+      <td class="num">{% if a.total_doc %}{{ a.total_doc|pesos }}{% else %}—{% endif %}</td>
+      <td><a class="btn chico gh" href="/reportes/descargar/{{ a.nombre|urlencode }}">⬇ Descargar</a></td>
+    </tr>
+    {% else %}<tr><td colspan="6" class="vacio">No hay archivos guardados en el historial.</td></tr>{% endfor %}
+  </table>
+  </div>
+  {% if historial %}<button class="btn chico sec" type="submit" style="margin-top:12px">Eliminar seleccionados</button>{% endif %}
+  </form>
+</div>
+{% endblock %}

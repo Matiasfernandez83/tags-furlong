@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block cuerpo %}
+<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px;margin-bottom:8px">
+  <div>
+    <h1 style="margin-bottom:2px">Billetera de resúmenes</h1>
+    <p class="mini">Gestión centralizada de múltiples tarjetas y peajes.</p>
+  </div>
+  <div class="tarjeta oscura" style="margin:0;min-width:270px;display:flex;align-items:center;gap:14px">
+    <div style="width:44px;height:44px;background:rgba(59,130,246,.2);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px">📊</div>
+    <div>
+      <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;font-weight:800">Deuda total consolidada</div>
+      <div style="font-size:24px;font-weight:900;color:var(--lima)">{{ deuda.t|pesos }}</div>
+      <div style="font-size:10px;color:#64748b">{{ deuda.n }} resúmenes activos</div>
+    </div>
+  </div>
+</div>
+
+<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:18px">
+  <div style="width:250px;flex-shrink:0">
+    <form method="post" enctype="multipart/form-data">
+      <div style="background:#fff;border:2px dashed #d4d4d8;border-radius:12px;padding:24px;text-align:center">
+        <div style="width:46px;height:46px;background:#dbeafe;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;margin:0 auto 10px">💳</div>
+        <div style="font-weight:800;font-size:14px">Cargar resumen</div>
+        <div style="font-size:10px;color:#a1a1aa;text-transform:uppercase;font-weight:700;margin:4px 0 12px">Subir PDF/Excel bancario</div>
+        <input type="file" name="archivo" accept=".pdf,.xlsx,.csv" required style="font-size:12px;width:100%">
+        <button class="btn" type="submit" style="width:100%;justify-content:center;margin-top:12px">Iniciar carga</button>
+      </div>
+    </form>
+  </div>
+  <div style="flex:1;min-width:0;overflow-x:auto">
+    <div style="display:flex;gap:14px;min-width:min-content">
+      {% for s in resumenes %}
+      <div style="width:280px;background:#fff;border:1px solid var(--borde);border-radius:12px;padding:18px;flex-shrink:0">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <div style="width:38px;height:38px;background:#f4f4f5;border:1px solid var(--borde);border-radius:9px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px">{{ s.banco[:3]|upper }}</div>
+          <div style="min-width:0">
+            <div style="font-weight:800;text-transform:uppercase;font-size:14px">{{ s.banco }}</div>
+            <div style="font-size:10px;color:#a1a1aa;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.titular or 'Sin titular' }}</div>
+          </div>
+          <form method="post" action="/gastos/borrar/{{ s.id }}" style="margin-left:auto" onsubmit="return confirm('¿Eliminar este resumen?')">
+            <button style="background:0;border:0;color:#cbd5e1;cursor:pointer;font-size:16px">🗑</button>
+          </form>
+        </div>
+        <div style="font-size:9px;font-weight:800;color:#a1a1aa;text-transform:uppercase">Total a pagar</div>
+        <div style="font-size:20px;font-weight:900;background:rgba(223,255,0,.3);padding:2px 8px;border-radius:6px;display:inline-block;margin:2px 0 6px">{{ s.total_resumen|pesos }}</div>
+        <div><span class="chip PEAJE">Peajes: {{ s.peajes|pesos }}</span></div>
+        <div style="display:flex;justify-content:space-between;padding-top:12px;margin-top:12px;border-top:1px solid var(--borde);font-size:10px;font-weight:700;color:#a1a1aa">
+          <span>📅 {{ s.periodo or '—' }}</span>
+          <span style="background:#fbbf24;color:#1e293b;padding:2px 6px;border-radius:4px">Vence: {{ s.vencimiento }}</span>
+        </div>
+      </div>
+      {% else %}
+      <div class="vacio" style="width:100%">Suba un resumen para comenzar...</div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="tarjeta">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+    <h3>Detalle de gastos (Peajes y Autopistas)</h3>
+    <a class="btn chico lima" href="/gastos/exportar">Exportar Excel</a>
+  </div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+    <a class="btn chico {{ 'sec' if not cat else 'gh' }}" href="/gastos">Todos</a>
+    {% for c in cats %}
+    <a class="btn chico {{ 'sec' if cat==c.categoria else 'gh' }}" href="/gastos?cat={{ c.categoria }}">{{ c.categoria }} ({{ c.n }})</a>
+    {% endfor %}
+  </div>
+  <div style="overflow-x:auto">
+  <table>
+    <tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th class="ocultar-mov">Resumen origen</th><th class="num">Monto</th></tr>
+    {% for m in detalle %}
+    <tr>
+      <td>{{ m.fecha }}</td><td style="font-weight:700">{{ m.concepto }}</td>
+      <td><span class="chip {{ m.categoria }}">{{ m.categoria }}</span></td>
+      <td class="ocultar-mov" style="font-size:11px;color:#a1a1aa">{{ m.archivo }}</td>
+      <td class="num" style="font-weight:800">{{ m.monto|pesos }}</td>
+    </tr>
+    {% else %}<tr><td colspan="5" class="vacio">No se han detectado gastos de peaje aún.</td></tr>{% endfor %}
+  </table>
+  </div>
+</div>
+{% endblock %}

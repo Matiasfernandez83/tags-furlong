@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block cuerpo %}
+<div style="position:relative;height:130px;border-radius:14px;overflow:hidden;margin-bottom:20px;background:linear-gradient(90deg,#141414,#404040);display:flex;flex-direction:column;justify-content:center;padding:0 28px">
+  <h1 style="color:#fff;margin:0">Furlong Logística</h1>
+  <p style="color:var(--rojo);font-weight:800;text-transform:uppercase;letter-spacing:2px;font-size:12px">Centro de control &amp; configuración</p>
+</div>
+
+<div class="tabs">
+  <a href="#general" class="act" onclick="tab('general',this)">General</a>
+  <a href="#usuarios" onclick="tab('usuarios',this)">Usuarios</a>
+  <a href="#sistema" onclick="tab('sistema',this)">Sistema</a>
+</div>
+
+<div id="general" class="pane">
+  <div class="dos">
+    <div class="tarjeta">
+      <h3 style="margin-bottom:12px">🔒 Seguridad de la cuenta</h3>
+      <p class="mini">Cambiá la clave del usuario con el que iniciaste sesión.</p>
+      <form method="post" action="/config/clave">
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#52525b">Nueva clave (mín. 6)</label>
+        <input type="password" name="nueva" required style="margin:6px 0 12px">
+        <button class="btn" type="submit">Actualizar clave</button>
+      </form>
+    </div>
+    <div class="tarjeta oscura">
+      <h3 style="color:#fff;margin-bottom:12px">👤 Sesión actual</h3>
+      <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:800">Operador autenticado</div>
+      <div style="font-size:18px;font-weight:800;margin:4px 0">{{ session.nombre }}</div>
+      <div style="color:#94a3b8;font-size:13px;margin-bottom:16px">{{ session.email }}</div>
+      <a class="btn" href="/salir" style="width:100%;justify-content:center">Cerrar sesión corporativa</a>
+    </div>
+  </div>
+  <div class="tarjeta" style="background:#f0fdf4;border-color:#bbf7d0">
+    <h3 style="color:#15803d">✔ Procesamiento 100% local, sin IA</h3>
+    <p class="mini" style="margin:0">Esta versión extrae los datos de los PDF con motor propio (sin API keys ni servicios externos).
+    No hay claves que puedan bloquearse ni costos por consumo.</p>
+  </div>
+</div>
+
+<div id="usuarios" class="pane" style="display:none">
+  <div class="tarjeta">
+    <h3 style="margin-bottom:12px">Usuarios del sistema</h3>
+    <div style="overflow-x:auto">
+    <table>
+      <tr><th>Nombre</th><th>Email</th><th>Rol</th><th></th></tr>
+      {% for u in usuarios %}
+      <tr>
+        <td><b>{{ u.nombre }}</b></td><td>{{ u.email }}</td>
+        <td><span class="chip">{{ u.rol }}</span></td>
+        <td class="num">
+          {% if u.id != session.uid %}
+          <form method="post" action="/config/usuario/borrar/{{ u.id }}" onsubmit="return confirm('¿Eliminar este usuario?')">
+            <button class="btn chico sec" type="submit">Eliminar</button>
+          </form>
+          {% else %}<span class="mini">(vos)</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    </div>
+  </div>
+  {% if session.rol == 'admin' %}
+  <div class="tarjeta">
+    <h3 style="margin-bottom:12px">➕ Crear usuario</h3>
+    <form method="post" action="/config/usuario" class="linea">
+      <input type="text" name="nombre" placeholder="Nombre" required style="max-width:180px">
+      <input type="email" name="email" placeholder="Correo" required style="max-width:220px">
+      <input type="password" name="clave" placeholder="Clave (mín. 6)" required style="max-width:160px">
+      <button class="btn" type="submit">Crear</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+
+<div id="sistema" class="pane" style="display:none">
+  <div class="kpis">
+    <div class="kpi"><div class="l">Movimientos</div><div class="v">{{ stats.movs }}</div></div>
+    <div class="kpi"><div class="l">Gastos tarjeta</div><div class="v">{{ stats.gastos }}</div></div>
+    <div class="kpi"><div class="l">Unidades en flota</div><div class="v">{{ stats.flota }}</div></div>
+    <div class="kpi"><div class="l">Base de datos</div><div class="v">{{ stats.mb }} MB</div></div>
+  </div>
+  <div class="tarjeta">
+    <h3>Estado del sistema</h3>
+    <p class="mini" style="margin:0">Motor de extracción determinístico · SQLite · Flask · v3.0 — Online</p>
+  </div>
+</div>
+{% endblock %}
+{% block script %}
+<script>
+function tab(id,el){
+  document.querySelectorAll('.pane').forEach(p=>p.style.display='none');
+  document.getElementById(id).style.display='block';
+  document.querySelectorAll('.tabs a').forEach(a=>a.classList.remove('act'));
+  el.classList.add('act');
+  return false;
+}
+</script>
+{% endblock %}

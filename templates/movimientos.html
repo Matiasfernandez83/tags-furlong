@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block cuerpo %}
+<h1>Movimientos</h1>
+<div class="tabs">
+  <a href="/movimientos" class="{{ 'act' if vista=='detalle' }}">Detalle</a>
+  <a href="/movimientos?vista=vehiculo" class="{{ 'act' if vista=='vehiculo' }}">x Vehículo</a>
+  <a href="/movimientos?vista=responsable" class="{{ 'act' if vista=='responsable' }}">x Responsable</a>
+</div>
+
+{% if vista != 'detalle' %}
+<div class="tarjeta">
+  <div style="overflow-x:auto">
+  <table>
+    <tr><th>{{ etiqueta }}</th><th class="num">Operaciones</th><th class="num">{{ 'Patentes' if vista=='responsable' else 'Responsable' }}</th><th class="num">Total</th></tr>
+    {% for g in grupos %}
+    <tr>
+      <td><b>{{ g.g }}</b></td><td class="num">{{ g.n }}</td>
+      <td class="num">{{ g.sub }}</td><td class="num">{{ g.t|pesos }}</td>
+    </tr>
+    {% else %}<tr><td colspan="4" class="vacio">Sin datos.</td></tr>{% endfor %}
+  </table>
+  </div>
+</div>
+{% else %}
+<div class="tarjeta">
+  <form class="linea" method="get" style="margin-bottom:14px">
+    <input type="text" name="q" value="{{ q }}" placeholder="Buscar patente, tag, equipo, responsable..." style="max-width:340px">
+    <button class="btn chico" type="submit">Buscar</button>
+    <a class="btn chico lima" href="/exportar">Excel</a>
+  </form>
+  <form method="post" action="/movimientos/borrar" onsubmit="return confirm('¿Eliminar los movimientos seleccionados?')">
+  <div style="overflow-x:auto">
+  <table>
+    <tr>
+      <th style="width:30px"><input type="checkbox" onclick="document.querySelectorAll('.chk').forEach(c=>c.checked=this.checked)"></th>
+      <th>Fecha</th><th>Patente</th><th class="ocultar-mov">Equipo</th><th>Responsable</th><th>TAG</th><th>Control</th><th class="num">Monto</th>
+    </tr>
+    {% for m in movs %}
+    <tr>
+      <td><input type="checkbox" class="chk" name="ids" value="{{ m.id }}"></td>
+      <td>{{ m.fecha }}</td><td>{{ m.patente }}</td><td class="ocultar-mov">{{ m.equipo }}</td>
+      <td>{{ m.dueno }}</td><td>{{ m.tag }}</td>
+      <td class="{{ 'ok' if m.verificado else 'no' }}">{{ '✔' if m.verificado else '—' }}</td>
+      <td class="num">{{ m.monto|pesos }}</td>
+    </tr>
+    {% else %}<tr><td colspan="8" class="vacio">Sin resultados.</td></tr>{% endfor %}
+  </table>
+  </div>
+  {% if movs %}<button class="btn chico sec" type="submit" style="margin-top:12px">Eliminar seleccionados</button>{% endif %}
+  </form>
+  <p class="mini" style="margin-top:10px">Se muestran hasta 500 registros. Usá el buscador o exportá a Excel para el total.</p>
+</div>
+{% endif %}
+{% endblock %}

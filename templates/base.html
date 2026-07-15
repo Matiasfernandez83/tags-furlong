@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TAGs · Transporte Furlong</title>
+<style>
+:root{--rojo:#E30613;--negro:#141414;--panel:#1F2937;--gris:#64748b;--fondo:#f4f4f5;
+  --borde:#e4e4e7;--verde:#16a34a;--lima:#DFFF00;--azul:#3b82f6}
+*{margin:0;padding:0;box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;background:var(--fondo);
+  color:var(--negro);font-size:14px;display:flex;min-height:100vh}
+
+/* ===== SIDEBAR (desktop) ===== */
+aside{width:230px;background:var(--negro);color:#fff;flex-shrink:0;display:flex;flex-direction:column;
+  position:sticky;top:0;height:100vh}
+aside .marca{padding:22px 20px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #262626}
+aside .logo{width:40px;height:40px;background:var(--rojo);border-radius:9px;display:flex;
+  align-items:center;justify-content:center;font-size:20px}
+aside .marca b{font-size:16px;letter-spacing:1px;display:block;line-height:1.1}
+aside .marca span{font-size:10px;color:var(--rojo);font-weight:800;letter-spacing:2px}
+aside .grupo{padding:16px 20px 6px;font-size:10px;color:#71717a;font-weight:800;letter-spacing:1.5px}
+aside a.item{display:flex;align-items:center;gap:12px;padding:12px 20px;color:#a1a1aa;
+  text-decoration:none;font-weight:600;font-size:14px;border-left:3px solid transparent}
+aside a.item:hover{color:#fff;background:#1c1c1c}
+aside a.item.act{color:#fff;background:#1c1c1c;border-left-color:var(--rojo)}
+aside a.item .ic{width:20px;text-align:center;font-size:16px}
+aside .estado{margin-top:auto;padding:16px 20px;border-top:1px solid #262626}
+aside .online{font-size:11px;color:#22c55e;font-weight:700;display:flex;align-items:center;gap:6px;margin-bottom:10px}
+aside .online::before{content:'';width:8px;height:8px;background:#22c55e;border-radius:50%}
+aside .user{display:flex;align-items:center;gap:10px;font-size:12px}
+aside .user .av{width:34px;height:34px;background:var(--rojo);border-radius:8px;display:flex;
+  align-items:center;justify-content:center;font-weight:800;font-size:12px}
+aside .user b{display:block}aside .user small{color:#71717a}
+aside .user a{margin-left:auto;color:#a1a1aa;text-decoration:none;font-size:18px}
+
+/* ===== CONTENIDO ===== */
+main{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{background:#0a0a0a;color:#fff;text-align:center;padding:8px;font-size:13px;font-weight:600}
+.contenido{padding:26px 30px;max-width:1300px;width:100%;margin:0 auto}
+h1{font-size:26px;font-weight:900;letter-spacing:-.5px;text-transform:uppercase;margin-bottom:20px}
+
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:22px}
+.kpi{background:#fff;border:1px solid var(--borde);border-radius:12px;padding:18px 20px;
+  cursor:pointer;transition:.15s;user-select:none}
+.kpi:hover{box-shadow:0 6px 18px rgba(0,0,0,.08);transform:translateY(-2px)}
+.kpi .l{font-size:11px;color:var(--gris);text-transform:uppercase;letter-spacing:.5px;font-weight:700}
+.kpi .v{font-size:28px;font-weight:900;margin:6px 0 2px}
+.kpi .s{font-size:11px;color:#a1a1aa}
+.kpi .dot{float:right;width:42px;height:42px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:20px}
+
+.dos{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:22px}
+.tarjeta{background:#fff;border:1px solid var(--borde);border-radius:12px;padding:20px;margin-bottom:16px}
+.tarjeta.oscura{background:var(--panel);color:#fff;border:0}
+.tarjeta h3{font-size:16px;font-weight:800;margin-bottom:4px}
+.mini{font-size:12px;color:var(--gris);margin-bottom:14px}
+
+.barra{display:flex;align-items:center;gap:12px;margin-bottom:8px;font-size:13px;text-decoration:none;color:inherit;cursor:pointer}
+.barra:hover .relleno{opacity:.8}
+.barra .nombre{width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0}
+.barra .relleno{height:22px;border-radius:4px;min-width:3px;background:var(--rojo);transition:.15s}
+.barra .relleno.azul{background:var(--azul)}.barra .relleno.gris{background:#cbd5e1}
+.barra .valor{color:var(--gris);font-variant-numeric:tabular-nums;margin-left:auto;font-weight:600;white-space:nowrap}
+
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--gris);
+  padding:10px 8px;border-bottom:2px solid var(--negro);white-space:nowrap}
+td{padding:9px 8px;border-bottom:1px solid var(--borde)}
+tr:hover td{background:#fafafa}
+.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ok{color:var(--verde);font-weight:700}.no{color:#cbd5e1}
+.chip{padding:2px 8px;background:#f1f5f9;border:1px solid var(--borde);border-radius:5px;
+  font-size:10px;font-weight:800;text-transform:uppercase;color:#475569}
+.chip.PEAJE{background:#fef2f2;color:#dc2626;border-color:#fecaca}
+.chip.COMBUSTIBLE{background:#fffbeb;color:#d97706;border-color:#fde68a}
+.chip.MANTENIMIENTO{background:#eff6ff;color:#2563eb;border-color:#bfdbfe}
+
+.btn{display:inline-flex;align-items:center;gap:6px;background:var(--rojo);color:#fff;border:0;
+  padding:11px 20px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;text-decoration:none;
+  text-transform:uppercase;letter-spacing:.4px}
+.btn:hover{background:#c00511}
+.btn.sec{background:var(--negro)}.btn.sec:hover{background:#333}
+.btn.blanco{background:#fff;color:var(--negro)}
+.btn.lima{background:var(--lima);color:var(--negro)}
+.btn.chico{padding:6px 12px;font-size:11px}
+.btn.gh{background:#f1f5f9;color:#334155;border:1px solid var(--borde)}
+
+input[type=text],input[type=email],input[type=password]{width:100%;padding:11px;border:1px solid #d4d4d8;
+  border-radius:8px;font-size:14px}
+input[type=file]{font-size:13px}
+form.linea{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.aviso{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 16px;
+  margin-bottom:16px;font-size:13px}
+hr{border:0;border-top:1px solid var(--borde);margin:14px 0}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--borde);margin-bottom:18px;flex-wrap:wrap}
+.tabs a{padding:12px 20px;font-size:11px;font-weight:800;letter-spacing:1px;color:var(--gris);
+  text-decoration:none;border-bottom:2px solid transparent;text-transform:uppercase}
+.tabs a.act{color:var(--negro);border-bottom-color:var(--rojo)}
+.pie{text-align:center;color:#a1a1aa;font-size:11px;padding:20px}
+.vacio{text-align:center;color:#a1a1aa;font-style:italic;padding:36px}
+
+/* ===== MODAL DETALLE (doble-click) ===== */
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;
+  align-items:center;justify-content:center;padding:16px}
+.modal.abierto{display:flex}
+.modal .caja{background:#fff;border-radius:14px;width:100%;max-width:900px;max-height:85vh;
+  display:flex;flex-direction:column;overflow:hidden}
+.modal .cab{padding:18px 22px;border-bottom:1px solid var(--borde);display:flex;
+  justify-content:space-between;align-items:center}
+.modal .cab h3{font-size:18px;font-weight:800}
+.modal .cab button{background:0;border:0;font-size:26px;cursor:pointer;color:var(--gris);line-height:1}
+.modal .cuerpo{overflow:auto;padding:0 22px 22px}
+
+/* ===== NAV MOVIL (bottom) ===== */
+.movnav{display:none}
+
+@media(max-width:860px){
+  body{flex-direction:column}
+  aside{width:100%;height:auto;position:static;flex-direction:row;align-items:center;
+    overflow-x:auto;padding:0}
+  aside .marca{padding:14px 16px;border:0;flex-shrink:0}
+  aside .marca span,aside .grupo,aside .estado{display:none}
+  aside .nav-links{display:flex;overflow-x:auto}
+  aside a.item{padding:14px 14px;border-left:0;border-bottom:3px solid transparent;white-space:nowrap;font-size:13px}
+  aside a.item.act{border-left:0;border-bottom-color:var(--rojo)}
+  aside a.item .txt{display:none}
+  aside a.item .ic{font-size:20px}
+  .contenido{padding:18px 16px}
+  h1{font-size:20px}
+  .dos{grid-template-columns:1fr}
+  .kpi .v{font-size:24px}
+  .barra .nombre{width:100px}
+  th,td{padding:8px 6px;font-size:12px}
+  .ocultar-mov{display:none}
+}
+@media(max-width:480px){
+  .kpis{grid-template-columns:1fr 1fr}
+  .kpi{padding:14px}
+  .kpi .v{font-size:20px}
+  .kpi .dot{width:32px;height:32px;font-size:16px}
+}
+</style>
+</head>
+<body>
+<aside>
+  <div class="marca">
+    <div class="logo">🚚</div>
+    <div><b>FURLONG</b><span>LOGÍSTICA</span></div>
+  </div>
+  <div class="nav-links">
+    <a class="item {{ 'act' if request.path=='/' }}" href="/"><span class="ic">▤</span><span class="txt">Tablero</span></a>
+    <a class="item {{ 'act' if request.path=='/importar' or request.path=='/flota' }}" href="/importar"><span class="ic">⤒</span><span class="txt">Importar</span></a>
+    <a class="item {{ 'act' if request.path=='/gastos' }}" href="/gastos"><span class="ic">▭</span><span class="txt">Gastos Tarjetas</span></a>
+    <a class="item {{ 'act' if request.path=='/reportes' }}" href="/reportes"><span class="ic">▦</span><span class="txt">Reportes</span></a>
+    <a class="item {{ 'act' if request.path=='/config' }}" href="/config"><span class="ic">⚙</span><span class="txt">Configuración</span></a>
+  </div>
+  <div class="estado">
+    <div class="online">SISTEMA ONLINE</div>
+    <div class="user">
+      <div class="av">{{ (session.nombre or 'A')[:2]|upper }}</div>
+      <div><b>{{ session.nombre }}</b><small>{{ session.rol|capitalize }}</small></div>
+      <a href="/salir" title="Salir">⎋</a>
+    </div>
+  </div>
+</aside>
+<main>
+  <div class="topbar">TAGs · Transporte Furlong</div>
+  <div class="contenido">
+    {% with msgs = get_flashed_messages() %}
+      {% for m in msgs %}<div class="aviso">{{ m }}</div>{% endfor %}
+    {% endwith %}
+    {% block cuerpo %}{% endblock %}
+  </div>
+  <div class="pie">TAGs Transporte Furlong · Sector Compras · v3.0</div>
+</main>
+
+<div class="modal" id="modal">
+  <div class="caja">
+    <div class="cab"><h3 id="modal-titulo">Detalle</h3><button onclick="cerrarModal()">×</button></div>
+    <div class="cuerpo" id="modal-cuerpo"></div>
+  </div>
+</div>
+<script>
+function pesos(n){return '$'+Number(n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function cerrarModal(){document.getElementById('modal').classList.remove('abierto');}
+document.getElementById('modal').addEventListener('click',e=>{if(e.target.id==='modal')cerrarModal();});
+async function abrirDetalle(tipo,val){
+  const m=document.getElementById('modal');
+  document.getElementById('modal-titulo').textContent='Cargando...';
+  document.getElementById('modal-cuerpo').innerHTML='<p class="vacio">Buscando registros...</p>';
+  m.classList.add('abierto');
+  try{
+    const r=await fetch('/detalle/'+tipo+(val?('?v='+encodeURIComponent(val)):''));
+    const d=await r.json();
+    document.getElementById('modal-titulo').textContent=d.titulo+' ('+d.filas.length+')';
+    let h='<table><thead><tr>';
+    if(d.modo==='grupo'){
+      h+='<th>Responsable</th><th class=num>Operaciones</th><th class=num>Patentes</th><th class=num>Monto</th></tr></thead><tbody>';
+      d.filas.forEach(f=>{h+=`<tr><td><b>${f.dueno}</b></td><td class=num>${f.n}</td><td class=num>${f.patentes}</td><td class=num>${pesos(f.monto)}</td></tr>`;});
+    }else{
+      h+='<th>Fecha</th><th>TAG</th><th>Patente</th><th>Concepto</th><th>Responsable</th><th class=num>Monto</th></tr></thead><tbody>';
+      d.filas.forEach(f=>{h+=`<tr><td>${f.fecha||''}</td><td>${f.tag||''}</td><td>${f.patente||''}</td><td>${f.concepto||''}</td><td>${f.dueno||''}</td><td class=num>${pesos(f.monto)}</td></tr>`;});
+    }
+    if(!d.filas.length)h+='<tr><td colspan=6 class=vacio>Sin registros.</td></tr>';
+    h+='</tbody></table>';
+    document.getElementById('modal-cuerpo').innerHTML=h;
+  }catch(e){document.getElementById('modal-cuerpo').innerHTML='<p class="vacio">Error al cargar.</p>';}
+}
+</script>
+{% block script %}{% endblock %}
+</body>
+</html>
