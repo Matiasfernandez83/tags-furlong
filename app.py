@@ -68,34 +68,87 @@ def close_db(_):
     d = g.pop("db", None)
     if d: d.close()
 
+# Tablas que pertenecen a una empresa (multi-inquilino: cada fila lleva empresa_id).
+TABLAS_TENANT = ("usuarios", "flota", "movimientos", "archivos", "resumenes", "gastos")
+
 def _esquema():
     pk = "SERIAL PRIMARY KEY" if USE_PG else "INTEGER PRIMARY KEY"
     real = "DOUBLE PRECISION" if USE_PG else "REAL"
     return f"""
-    CREATE TABLE IF NOT EXISTS usuarios(id {pk}, email TEXT UNIQUE,
+    CREATE TABLE IF NOT EXISTS empresas(id {pk}, nombre TEXT, creado TEXT);
+    CREATE TABLE IF NOT EXISTS usuarios(id {pk}, empresa_id INTEGER, email TEXT UNIQUE,
         clave TEXT, nombre TEXT, rol TEXT DEFAULT 'operador');
-    CREATE TABLE IF NOT EXISTS flota(id {pk}, tag TEXT, patente TEXT,
+    CREATE TABLE IF NOT EXISTS flota(id {pk}, empresa_id INTEGER, tag TEXT, patente TEXT,
         dueno TEXT, equipo TEXT, estado TEXT, marca TEXT);
-    CREATE TABLE IF NOT EXISTS movimientos(id {pk}, fecha TEXT, tag TEXT,
+    CREATE TABLE IF NOT EXISTS movimientos(id {pk}, empresa_id INTEGER, fecha TEXT, tag TEXT,
         patente TEXT, concepto TEXT, monto {real}, dueno TEXT, equipo TEXT,
         verificado INTEGER DEFAULT 0, archivo TEXT, creado TEXT);
-    CREATE TABLE IF NOT EXISTS archivos(id {pk}, nombre TEXT UNIQUE, tipo TEXT,
+    CREATE TABLE IF NOT EXISTS archivos(id {pk}, empresa_id INTEGER, nombre TEXT, tipo TEXT,
         total_doc {real} DEFAULT 0, contenido TEXT, mime TEXT, creado TEXT);
-    CREATE TABLE IF NOT EXISTS resumenes(id {pk}, archivo TEXT, banco TEXT,
+    CREATE TABLE IF NOT EXISTS resumenes(id {pk}, empresa_id INTEGER, archivo TEXT, banco TEXT,
         titular TEXT, periodo TEXT, vencimiento TEXT, total_resumen {real}, creado TEXT);
-    CREATE TABLE IF NOT EXISTS gastos(id {pk}, resumen_id INTEGER,
+    CREATE TABLE IF NOT EXISTS gastos(id {pk}, empresa_id INTEGER, resumen_id INTEGER,
         fecha TEXT, concepto TEXT, categoria TEXT, monto {real});
     CREATE INDEX IF NOT EXISTS idx_mov_tag ON movimientos(tag);
     CREATE INDEX IF NOT EXISTS idx_flota_tag ON flota(tag);
     """
 
+def _columnas(con, tabla):
+    if USE_PG:
+        rows = con.execute("SELECT column_name FROM information_schema.columns "
+                           "WHERE table_schema='public' AND table_name=?", (tabla,)).fetchall()
+        return {r["column_name"] for r in rows}
+    return {r["name"] for r in con.execute(f"PRAGMA table_info({tabla})").fetchall()}
+
+def _fix_archivos_unique(con):
+    # Antes archivos.nombre era UNIQUE global. Con multi-empresa se quita: el mismo
+    # nombre de archivo puede repetirse entre empresas distintas.
+    if USE_PG:
+        con.execute("ALTER TABLE archivos DROP CONSTRAINT IF EXISTS archivos_nombre_key")
+        return
+    for idx in con.execute("PRAGMA index_list(archivos)").fetchall():
+        if idx["unique"]:
+            cols = [c["name"] for c in con.execute(f"PRAGMA index_info({idx['name']})").fetchall()]
+            if cols == ["nombre"]:
+                con.execute("""CREATE TABLE archivos_new(id INTEGER PRIMARY KEY, empresa_id INTEGER,
+                    nombre TEXT, tipo TEXT, total_doc REAL DEFAULT 0, contenido TEXT, mime TEXT, creado TEXT)""")
+                con.execute("""INSERT INTO archivos_new(id,empresa_id,nombre,tipo,total_doc,contenido,mime,creado)
+                    SELECT id,empresa_id,nombre,tipo,total_doc,contenido,mime,creado FROM archivos""")
+                con.execute("DROP TABLE archivos")
+                con.execute("ALTER TABLE archivos_new RENAME TO archivos")
+                break
+
+def migrar(con):
+    # Actualiza bases creadas antes de multi-empresa sin perder datos.
+    for tabla in TABLAS_TENANT:
+        if "empresa_id" not in _columnas(con, tabla):
+            con.execute(f"ALTER TABLE {tabla} ADD COLUMN empresa_id INTEGER")
+    _fix_archivos_unique(con)
+    # Indices por empresa (se crean recien aca, ya con la columna presente).
+    con.execute("CREATE INDEX IF NOT EXISTS idx_mov_emp ON movimientos(empresa_id)")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_arch_emp ON archivos(empresa_id, nombre)")
+
 def init_db():
     con = _conectar()
     con.executescript(_esquema())
+    migrar(con)
+    row = con.execute("SELECT id FROM empresas ORDER BY id LIMIT 1").fetchone()
+    if row:
+        emp_id = row["id"]
+    else:
+        emp_id = con.execute("INSERT INTO empresas(nombre,creado) VALUES(?,?) RETURNING id",
+                             ("Transporte Furlong", datetime.now().strftime("%d/%m/%Y"))).fetchone()["id"]
+    # Asigna a la empresa por defecto cualquier dato preexistente (migracion).
+    for tabla in TABLAS_TENANT:
+        con.execute(f"UPDATE {tabla} SET empresa_id=? WHERE empresa_id IS NULL", (emp_id,))
     if not con.execute("SELECT 1 FROM usuarios").fetchone():
-        con.execute("INSERT INTO usuarios(email,clave,nombre,rol) VALUES(?,?,?,?)",
-                    ("admin@transportefurlong.com.ar", generate_password_hash("admin"),
-                     "Admin Furlong", "admin"))
+        con.execute("INSERT INTO usuarios(empresa_id,email,clave,nombre,rol) VALUES(?,?,?,?,?)",
+                    (emp_id, "admin@transportefurlong.com.ar", generate_password_hash("admin"),
+                     "Admin Furlong", "superadmin"))
+    else:
+        # El admin original pasa a superadmin para poder gestionar empresas.
+        con.execute("UPDATE usuarios SET rol='superadmin' WHERE email=? AND rol='admin'",
+                    ("admin@transportefurlong.com.ar",))
     con.commit(); con.close()
 
 # ================= UTILIDADES =================
@@ -281,13 +334,18 @@ def extraer_items_peajes(arch, contenido):
 
 def guardar_archivo(nombre, tipo, total_doc, contenido, mime):
     b64 = base64.b64encode(contenido).decode() if contenido else ""
-    db().execute("""INSERT INTO archivos(nombre,tipo,total_doc,contenido,mime,creado)
-        VALUES(?,?,?,?,?,?)
-        ON CONFLICT(nombre) DO UPDATE SET tipo=EXCLUDED.tipo, total_doc=EXCLUDED.total_doc,
-        contenido=EXCLUDED.contenido, mime=EXCLUDED.mime, creado=EXCLUDED.creado""",
-        (nombre, tipo, total_doc, b64, mime, datetime.now().strftime("%d/%m/%Y %H:%M")))
+    d = db()
+    # Reemplazo scopeado por empresa (equivale a un upsert por empresa_id+nombre).
+    d.execute("DELETE FROM archivos WHERE empresa_id=? AND nombre=?", (emp(), nombre))
+    d.execute("""INSERT INTO archivos(empresa_id,nombre,tipo,total_doc,contenido,mime,creado)
+        VALUES(?,?,?,?,?,?,?)""",
+        (emp(), nombre, tipo, total_doc, b64, mime, datetime.now().strftime("%d/%m/%Y %H:%M")))
 
 # ================= AUTENTICACION =================
+def emp():
+    """Empresa (inquilino) del usuario logueado. Toda consulta de datos se filtra por esto."""
+    return session.get("empresa_id")
+
 @app.before_request
 def requiere_login():
     if request.endpoint not in ("login", "static") and not session.get("uid"):
@@ -299,7 +357,8 @@ def login():
         u = db().execute("SELECT * FROM usuarios WHERE email=?",
                          (request.form["email"].strip().lower(),)).fetchone()
         if u and check_password_hash(u["clave"], request.form["clave"]):
-            session.update(uid=u["id"], email=u["email"], nombre=u["nombre"], rol=u["rol"])
+            session.update(uid=u["id"], email=u["email"], nombre=u["nombre"],
+                           rol=u["rol"], empresa_id=u["empresa_id"])
             return redirect("/")
         flash("Credenciales invalidas.")
     return render_template("login.html")
@@ -315,42 +374,43 @@ def archivo_muy_grande(_):
 # ================= 1) TABLERO =================
 @app.route("/")
 def dashboard():
-    d = db()
+    d = db(); E = emp()
     kpi = d.execute("""SELECT COUNT(*) n, COALESCE(SUM(monto),0) total,
         COUNT(DISTINCT NULLIF(patente,'')) patentes, COUNT(DISTINCT NULLIF(dueno,'')) duenos,
-        COALESCE(SUM(verificado),0) ok FROM movimientos""").fetchone()
+        COALESCE(SUM(verificado),0) ok FROM movimientos WHERE empresa_id=?""", (E,)).fetchone()
     top = d.execute("""SELECT COALESCE(NULLIF(dueno,''),'Sin asignar') dueno, SUM(monto) t,
-        COUNT(*) n FROM movimientos GROUP BY 1 ORDER BY t DESC LIMIT 10""").fetchall()
+        COUNT(*) n FROM movimientos WHERE empresa_id=? GROUP BY 1 ORDER BY t DESC LIMIT 10""", (E,)).fetchall()
     dist = d.execute("""SELECT CASE WHEN verificado=1 THEN 'Verificados en flota'
-        ELSE 'Sin match de TAG' END k, COUNT(*) n, SUM(monto) t FROM movimientos GROUP BY 1""").fetchall()
-    ult = d.execute("SELECT * FROM movimientos ORDER BY id DESC LIMIT 20").fetchall()
+        ELSE 'Sin match de TAG' END k, COUNT(*) n, SUM(monto) t FROM movimientos
+        WHERE empresa_id=? GROUP BY 1""", (E,)).fetchall()
+    ult = d.execute("SELECT * FROM movimientos WHERE empresa_id=? ORDER BY id DESC LIMIT 20", (E,)).fetchall()
     maximo = max([r["t"] for r in top], default=1)
     return render_template("dashboard.html", kpi=kpi, top=top, dist=dist, ult=ult, maximo=maximo)
 
 # --- Endpoint JSON para modales de doble-click (drill-down) ---
 @app.route("/detalle/<tipo>")
 def detalle(tipo):
-    d = db()
+    d = db(); E = emp()
     arg = request.args.get("v", "")
     if tipo == "monto" or tipo == "operaciones":
-        rows = d.execute("SELECT * FROM movimientos ORDER BY monto DESC LIMIT 1000").fetchall()
+        rows = d.execute("SELECT * FROM movimientos WHERE empresa_id=? ORDER BY monto DESC LIMIT 1000", (E,)).fetchall()
         titulo = "Monto total" if tipo == "monto" else "Operaciones"
     elif tipo == "camiones":
-        rows = d.execute("""SELECT * FROM movimientos WHERE id IN (
-            SELECT MAX(id) FROM movimientos WHERE patente<>'' GROUP BY patente)
-            ORDER BY monto DESC""").fetchall()
+        rows = d.execute("""SELECT * FROM movimientos WHERE empresa_id=? AND id IN (
+            SELECT MAX(id) FROM movimientos WHERE patente<>'' AND empresa_id=? GROUP BY patente)
+            ORDER BY monto DESC""", (E, E)).fetchall()
         titulo = "Camiones activos"
     elif tipo == "duenos":
         rows = d.execute("""SELECT dueno, COUNT(*) n, SUM(monto) monto,
-            COUNT(DISTINCT patente) patentes FROM movimientos WHERE dueno!=''
-            GROUP BY dueno ORDER BY monto DESC""").fetchall()
+            COUNT(DISTINCT patente) patentes FROM movimientos WHERE dueno!='' AND empresa_id=?
+            GROUP BY dueno ORDER BY monto DESC""", (E,)).fetchall()
         return jsonify(titulo="Responsables", modo="grupo",
                        filas=[dict(r) for r in rows])
     elif tipo == "dueno":
-        rows = d.execute("SELECT * FROM movimientos WHERE dueno=? ORDER BY monto DESC", (arg,)).fetchall()
+        rows = d.execute("SELECT * FROM movimientos WHERE dueno=? AND empresa_id=? ORDER BY monto DESC", (arg, E)).fetchall()
         titulo = f"Detalle: {arg}"
     else:
-        rows = d.execute("SELECT * FROM movimientos ORDER BY id DESC LIMIT 500").fetchall()
+        rows = d.execute("SELECT * FROM movimientos WHERE empresa_id=? ORDER BY id DESC LIMIT 500", (E,)).fetchall()
         titulo = "Movimientos"
     return jsonify(titulo=titulo, modo="detalle", filas=[dict(r) for r in rows])
 
@@ -359,17 +419,17 @@ def movimientos():
     q = request.args.get("q", "").strip()
     dueno = request.args.get("dueno", "").strip()
     vista = request.args.get("vista", "detalle")
-    d = db()
+    d = db(); E = emp()
     if vista == "vehiculo":
         grupos = d.execute("""SELECT COALESCE(NULLIF(patente,''),'S/D') g, COUNT(*) n,
-            SUM(monto) t, MAX(dueno) sub FROM movimientos GROUP BY 1 ORDER BY t DESC""").fetchall()
+            SUM(monto) t, MAX(dueno) sub FROM movimientos WHERE empresa_id=? GROUP BY 1 ORDER BY t DESC""", (E,)).fetchall()
         return render_template("movimientos.html", vista=vista, grupos=grupos, q=q, movs=[], etiqueta="Vehiculo")
     if vista == "responsable":
         grupos = d.execute("""SELECT COALESCE(NULLIF(dueno,''),'Sin asignar') g, COUNT(*) n,
-            SUM(monto) t, COUNT(DISTINCT patente) sub FROM movimientos GROUP BY 1 ORDER BY t DESC""").fetchall()
+            SUM(monto) t, COUNT(DISTINCT patente) sub FROM movimientos WHERE empresa_id=? GROUP BY 1 ORDER BY t DESC""", (E,)).fetchall()
         return render_template("movimientos.html", vista=vista, grupos=grupos, q=q, movs=[], etiqueta="Responsable")
     filtro = request.args.get("filtro", "")
-    args, conds = [], []
+    args, conds = [E], ["empresa_id=?"]
     if q:
         conds.append("(tag LIKE ? OR patente LIKE ? OR dueno LIKE ? OR concepto LIKE ?)")
         args += [f"%{q}%"] * 4
@@ -389,11 +449,11 @@ def movimientos():
 def borrar_movimientos():
     ids = [int(i) for i in request.form.getlist("ids") if str(i).isdigit()]
     arch = request.form.get("archivo")
-    d = db()
+    d = db(); E = emp()
     if ids:
-        d.executemany("DELETE FROM movimientos WHERE id=?", [(i,) for i in ids])
+        d.executemany("DELETE FROM movimientos WHERE id=? AND empresa_id=?", [(i, E) for i in ids])
     elif arch:
-        d.execute("DELETE FROM movimientos WHERE archivo=?", (arch,))
+        d.execute("DELETE FROM movimientos WHERE archivo=? AND empresa_id=?", (arch, E))
     d.commit(); flash("Registros eliminados.")
     return redirect(request.referrer or "/movimientos")
 
@@ -414,20 +474,20 @@ def importar():
         elif not items:
             flash("No se encontraron movimientos en el archivo.")
         else:
-            flota_map = {f["tag"]: f for f in d.execute("SELECT * FROM flota")}
+            flota_map = {f["tag"]: f for f in d.execute("SELECT * FROM flota WHERE empresa_id=?", (emp(),))}
             nuevos, total = [], 0.0
             for it in items:
                 m = flota_map.get(it["tag"])
-                nuevos.append((it["fecha"], it["tag"], (m["patente"] if m else it.get("patente", "")),
+                nuevos.append((emp(), it["fecha"], it["tag"], (m["patente"] if m else it.get("patente", "")),
                                it["concepto"], it["monto"], (m["dueno"] if m else ""),
                                (m["equipo"] if m else ""), 1 if m else 0, arch.filename, datetime.now().isoformat()))
                 total += it["monto"]
-            d.executemany("""INSERT INTO movimientos(fecha,tag,patente,concepto,monto,
-                dueno,equipo,verificado,archivo,creado) VALUES(?,?,?,?,?,?,?,?,?,?)""", nuevos)
+            d.executemany("""INSERT INTO movimientos(empresa_id,fecha,tag,patente,concepto,monto,
+                dueno,equipo,verificado,archivo,creado) VALUES(?,?,?,?,?,?,?,?,?,?,?)""", nuevos)
             mime = "application/pdf" if arch.filename.lower().endswith(".pdf") else "application/vnd.ms-excel"
             guardar_archivo(arch.filename, "Peajes", total_doc, contenido, mime)
             d.commit()
-            ok = sum(1 for n in nuevos if n[7])
+            ok = sum(1 for n in nuevos if n[8])
             msg = f"Importados {len(nuevos)} movimientos ({pesos(total)}). Verificados: {ok}."
             if total_doc:
                 dif = abs(total_doc - total)
@@ -435,10 +495,10 @@ def importar():
                         else f" ⚠ Documento declara {pesos(total_doc)}, diferencia {pesos(dif)}.")
             flash(msg)
         return redirect("/importar")
-    flota_n = d.execute("SELECT COUNT(*) n FROM flota").fetchone()["n"]
+    flota_n = d.execute("SELECT COUNT(*) n FROM flota WHERE empresa_id=?", (emp(),)).fetchone()["n"]
     archivos = d.execute("""SELECT m.archivo, COUNT(*) n, SUM(m.monto) t, COALESCE(MAX(a.total_doc),0) td
-        FROM movimientos m LEFT JOIN archivos a ON a.nombre=m.archivo
-        GROUP BY m.archivo ORDER BY MAX(m.id) DESC""").fetchall()
+        FROM movimientos m LEFT JOIN archivos a ON a.nombre=m.archivo AND a.empresa_id=?
+        WHERE m.empresa_id=? GROUP BY m.archivo ORDER BY MAX(m.id) DESC""", (emp(), emp())).fetchall()
     return render_template("importar.html", archivos=archivos, flota_n=flota_n)
 
 @app.route("/flota", methods=["GET", "POST"])
@@ -460,13 +520,13 @@ def flota():
                 t = norm_tag(get("tag"))
                 if t and t not in vistos:
                     vistos.add(t)
-                    nuevos.append((t, get("patente").upper(), get("dueno"), get("equipo"), get("estado"), get("marca")))
-            d.execute("DELETE FROM flota")
-            d.executemany("INSERT INTO flota(tag,patente,dueno,equipo,estado,marca) VALUES(?,?,?,?,?,?)", nuevos)
+                    nuevos.append((emp(), t, get("patente").upper(), get("dueno"), get("equipo"), get("estado"), get("marca")))
+            d.execute("DELETE FROM flota WHERE empresa_id=?", (emp(),))
+            d.executemany("INSERT INTO flota(empresa_id,tag,patente,dueno,equipo,estado,marca) VALUES(?,?,?,?,?,?,?)", nuevos)
             d.commit()
             flash(f"Base actualizada: {len(nuevos)} unidades unicas.")
         return redirect("/flota")
-    unidades = d.execute("SELECT * FROM flota ORDER BY dueno, patente").fetchall()
+    unidades = d.execute("SELECT * FROM flota WHERE empresa_id=? ORDER BY dueno, patente", (emp(),)).fetchall()
     return render_template("flota.html", unidades=unidades)
 
 # ================= 3) GASTOS TARJETAS =================
@@ -496,12 +556,12 @@ def gastos():
                         "total": sum(i["monto"] for i in items)}
             if not items:
                 raise ValueError("no se encontraron consumos en el resumen.")
-            cur = d.execute("""INSERT INTO resumenes(archivo,banco,titular,periodo,vencimiento,total_resumen,creado)
-                VALUES(?,?,?,?,?,?,?) RETURNING id""", (arch.filename, meta["banco"], meta["titular"], meta["periodo"],
+            cur = d.execute("""INSERT INTO resumenes(empresa_id,archivo,banco,titular,periodo,vencimiento,total_resumen,creado)
+                VALUES(?,?,?,?,?,?,?,?) RETURNING id""", (emp(), arch.filename, meta["banco"], meta["titular"], meta["periodo"],
                 meta["vencimiento"], meta["total"], datetime.now().isoformat()))
             rid = cur.fetchone()["id"]
-            d.executemany("INSERT INTO gastos(resumen_id,fecha,concepto,categoria,monto) VALUES(?,?,?,?,?)",
-                          [(rid, i["fecha"], i["concepto"], i["categoria"], i["monto"]) for i in items])
+            d.executemany("INSERT INTO gastos(empresa_id,resumen_id,fecha,concepto,categoria,monto) VALUES(?,?,?,?,?,?)",
+                          [(emp(), rid, i["fecha"], i["concepto"], i["categoria"], i["monto"]) for i in items])
             mime = "application/pdf" if arch.filename.lower().endswith(".pdf") else "application/vnd.ms-excel"
             guardar_archivo(arch.filename, "Resumen tarjeta", meta["total"], contenido, mime)
             d.commit()
@@ -509,23 +569,25 @@ def gastos():
         except Exception as e:
             flash(f"Error al procesar: {e}")
         return redirect("/gastos")
+    E = emp()
     resumenes = d.execute("""SELECT r.*, COUNT(g.id) n, COALESCE(SUM(g.monto),0) suma,
         COALESCE(SUM(CASE WHEN g.categoria='PEAJE' THEN g.monto ELSE 0 END),0) peajes
-        FROM resumenes r LEFT JOIN gastos g ON g.resumen_id=r.id GROUP BY r.id ORDER BY r.id DESC""").fetchall()
+        FROM resumenes r LEFT JOIN gastos g ON g.resumen_id=r.id
+        WHERE r.empresa_id=? GROUP BY r.id ORDER BY r.id DESC""", (E,)).fetchall()
     cat = request.args.get("cat", "")
-    sql = "SELECT g.*, r.banco, r.archivo FROM gastos g JOIN resumenes r ON r.id=g.resumen_id"
-    args = []
-    if cat: sql += " WHERE g.categoria=?"; args.append(cat)
+    sql = "SELECT g.*, r.banco, r.archivo FROM gastos g JOIN resumenes r ON r.id=g.resumen_id WHERE g.empresa_id=?"
+    args = [E]
+    if cat: sql += " AND g.categoria=?"; args.append(cat)
     detalle = d.execute(sql + " ORDER BY g.id DESC LIMIT 500", args).fetchall()
-    deuda = d.execute("SELECT COALESCE(SUM(total_resumen),0) t, COUNT(*) n FROM resumenes").fetchone()
-    cats = d.execute("SELECT categoria, COUNT(*) n, SUM(monto) t FROM gastos GROUP BY categoria ORDER BY t DESC").fetchall()
+    deuda = d.execute("SELECT COALESCE(SUM(total_resumen),0) t, COUNT(*) n FROM resumenes WHERE empresa_id=?", (E,)).fetchone()
+    cats = d.execute("SELECT categoria, COUNT(*) n, SUM(monto) t FROM gastos WHERE empresa_id=? GROUP BY categoria ORDER BY t DESC", (E,)).fetchall()
     return render_template("gastos.html", resumenes=resumenes, detalle=detalle, deuda=deuda, cat=cat, cats=cats)
 
 @app.route("/gastos/borrar/<int:rid>", methods=["POST"])
 def borrar_resumen(rid):
-    d = db()
-    d.execute("DELETE FROM gastos WHERE resumen_id=?", (rid,))
-    d.execute("DELETE FROM resumenes WHERE id=?", (rid,))
+    d = db(); E = emp()
+    d.execute("DELETE FROM gastos WHERE resumen_id=? AND empresa_id=?", (rid, E))
+    d.execute("DELETE FROM resumenes WHERE id=? AND empresa_id=?", (rid, E))
     d.commit(); flash("Resumen eliminado.")
     return redirect("/gastos")
 
@@ -534,7 +596,7 @@ def exportar_gastos():
     wb = Workbook(); ws = wb.active; ws.title = "Gastos"
     ws.append(["FECHA", "CONCEPTO", "CATEGORIA", "MONTO", "BANCO", "RESUMEN ORIGEN"])
     for m in db().execute("""SELECT g.*, r.banco, r.archivo FROM gastos g
-        JOIN resumenes r ON r.id=g.resumen_id ORDER BY r.id, g.id"""):
+        JOIN resumenes r ON r.id=g.resumen_id WHERE g.empresa_id=? ORDER BY r.id, g.id""", (emp(),)):
         ws.append([m["fecha"], m["concepto"], m["categoria"], m["monto"], m["banco"], m["archivo"]])
     buf = io.BytesIO(); wb.save(buf); buf.seek(0)
     return send_file(buf, as_attachment=True, download_name=f"gastos_tarjetas_{datetime.now():%Y%m%d}.xlsx")
@@ -542,15 +604,15 @@ def exportar_gastos():
 # ================= 4) REPORTES =================
 @app.route("/reportes")
 def reportes():
-    d = db()
-    n = d.execute("SELECT COUNT(*) n FROM movimientos").fetchone()["n"]
-    ng = d.execute("SELECT COUNT(*) n FROM gastos").fetchone()["n"]
-    historial = d.execute("SELECT nombre,tipo,total_doc,creado FROM archivos ORDER BY id DESC").fetchall()
+    d = db(); E = emp()
+    n = d.execute("SELECT COUNT(*) n FROM movimientos WHERE empresa_id=?", (E,)).fetchone()["n"]
+    ng = d.execute("SELECT COUNT(*) n FROM gastos WHERE empresa_id=?", (E,)).fetchone()["n"]
+    historial = d.execute("SELECT nombre,tipo,total_doc,creado FROM archivos WHERE empresa_id=? ORDER BY id DESC", (E,)).fetchall()
     return render_template("reportes.html", n=n, ng=ng, historial=historial)
 
 @app.route("/reportes/descargar/<path:nombre>")
 def descargar_archivo(nombre):
-    r = db().execute("SELECT contenido,mime,nombre FROM archivos WHERE nombre=?", (nombre,)).fetchone()
+    r = db().execute("SELECT contenido,mime,nombre FROM archivos WHERE nombre=? AND empresa_id=?", (nombre, emp())).fetchone()
     if not r or not r["contenido"]:
         flash("Archivo no disponible."); return redirect("/reportes")
     data = base64.b64decode(r["contenido"])
@@ -560,13 +622,13 @@ def descargar_archivo(nombre):
 @app.route("/reportes/borrar", methods=["POST"])
 def borrar_archivo():
     nombres = request.form.getlist("nombres") or ([request.form["nombre"]] if request.form.get("nombre") else [])
-    d = db()
+    d = db(); E = emp()
     for nombre in nombres:
-        d.execute("DELETE FROM movimientos WHERE archivo=?", (nombre,))
-        for r in d.execute("SELECT id FROM resumenes WHERE archivo=?", (nombre,)).fetchall():
-            d.execute("DELETE FROM gastos WHERE resumen_id=?", (r["id"],))
-        d.execute("DELETE FROM resumenes WHERE archivo=?", (nombre,))
-        d.execute("DELETE FROM archivos WHERE nombre=?", (nombre,))
+        d.execute("DELETE FROM movimientos WHERE archivo=? AND empresa_id=?", (nombre, E))
+        for r in d.execute("SELECT id FROM resumenes WHERE archivo=? AND empresa_id=?", (nombre, E)).fetchall():
+            d.execute("DELETE FROM gastos WHERE resumen_id=? AND empresa_id=?", (r["id"], E))
+        d.execute("DELETE FROM resumenes WHERE archivo=? AND empresa_id=?", (nombre, E))
+        d.execute("DELETE FROM archivos WHERE nombre=? AND empresa_id=?", (nombre, E))
     d.commit(); flash(f"{len(nombres)} archivo(s) y sus registros eliminados.")
     return redirect("/reportes")
 
@@ -574,13 +636,13 @@ def borrar_archivo():
 def exportar():
     wb = Workbook(); ws = wb.active; ws.title = "Movimientos"
     ws.append(["FECHA", "TAG", "PATENTE", "CONCEPTO", "MONTO", "RESPONSABLE", "EQUIPO", "VERIFICADO", "ARCHIVO"])
-    for m in db().execute("SELECT * FROM movimientos ORDER BY dueno, fecha"):
+    for m in db().execute("SELECT * FROM movimientos WHERE empresa_id=? ORDER BY dueno, fecha", (emp(),)):
         ws.append([m["fecha"], m["tag"], m["patente"], m["concepto"], m["monto"],
                    m["dueno"], m["equipo"], "SI" if m["verificado"] else "NO", m["archivo"]])
     ws2 = wb.create_sheet("Gastos tarjetas")
     ws2.append(["FECHA", "CONCEPTO", "CATEGORIA", "MONTO", "BANCO", "RESUMEN"])
     for m in db().execute("""SELECT g.*, r.banco, r.archivo FROM gastos g
-        JOIN resumenes r ON r.id=g.resumen_id ORDER BY r.id, g.id"""):
+        JOIN resumenes r ON r.id=g.resumen_id WHERE g.empresa_id=? ORDER BY r.id, g.id""", (emp(),)):
         ws2.append([m["fecha"], m["concepto"], m["categoria"], m["monto"], m["banco"], m["archivo"]])
     buf = io.BytesIO(); wb.save(buf); buf.seek(0)
     return send_file(buf, as_attachment=True, download_name=f"reporte_maestro_{datetime.now():%Y%m%d}.xlsx")
@@ -588,12 +650,12 @@ def exportar():
 # ================= 5) CONFIGURACION =================
 @app.route("/config")
 def config():
-    d = db()
-    usuarios = d.execute("SELECT id,email,nombre,rol FROM usuarios ORDER BY id").fetchall()
+    d = db(); E = emp()
+    usuarios = d.execute("SELECT id,email,nombre,rol FROM usuarios WHERE empresa_id=? ORDER BY id", (E,)).fetchall()
     stats = {
-        "movs": d.execute("SELECT COUNT(*) n FROM movimientos").fetchone()["n"],
-        "gastos": d.execute("SELECT COUNT(*) n FROM gastos").fetchone()["n"],
-        "flota": d.execute("SELECT COUNT(*) n FROM flota").fetchone()["n"],
+        "movs": d.execute("SELECT COUNT(*) n FROM movimientos WHERE empresa_id=?", (E,)).fetchone()["n"],
+        "gastos": d.execute("SELECT COUNT(*) n FROM gastos WHERE empresa_id=?", (E,)).fetchone()["n"],
+        "flota": d.execute("SELECT COUNT(*) n FROM flota WHERE empresa_id=?", (E,)).fetchone()["n"],
         "mb": (round(d.execute("SELECT pg_database_size(current_database()) s").fetchone()["s"] / 1048576, 2)
                if USE_PG else (round(os.path.getsize(DB) / 1048576, 2) if os.path.exists(DB) else 0)),
     }
@@ -612,7 +674,7 @@ def cambiar_clave():
 
 @app.route("/config/usuario", methods=["POST"])
 def crear_usuario():
-    if session.get("rol") != "admin":
+    if session.get("rol") not in ("admin", "superadmin"):
         flash("Solo un administrador puede crear usuarios."); return redirect("/config")
     email = request.form["email"].strip().lower()
     clave = request.form["clave"].strip()
@@ -621,8 +683,8 @@ def crear_usuario():
         flash("La clave debe tener al menos 6 caracteres.")
     else:
         try:
-            db().execute("INSERT INTO usuarios(email,clave,nombre) VALUES(?,?,?)",
-                         (email, generate_password_hash(clave), nombre))
+            db().execute("INSERT INTO usuarios(empresa_id,email,clave,nombre) VALUES(?,?,?,?)",
+                         (emp(), email, generate_password_hash(clave), nombre))
             db().commit(); flash(f"Usuario {email} creado.")
         except INTEGRITY_ERRORS:
             db().rollback(); flash("Ese correo ya existe.")
@@ -630,14 +692,49 @@ def crear_usuario():
 
 @app.route("/config/usuario/borrar/<int:uid>", methods=["POST"])
 def borrar_usuario(uid):
-    if session.get("rol") != "admin":
+    if session.get("rol") not in ("admin", "superadmin"):
         flash("Solo un administrador puede eliminar usuarios."); return redirect("/config")
     if uid == session["uid"]:
         flash("No podes eliminar tu propio usuario.")
     else:
-        db().execute("DELETE FROM usuarios WHERE id=?", (uid,)); db().commit()
+        db().execute("DELETE FROM usuarios WHERE id=? AND empresa_id=?", (uid, emp())); db().commit()
         flash("Usuario eliminado.")
     return redirect("/config")
+
+# ================= 6) EMPRESAS (solo superadmin) =================
+@app.route("/empresas")
+def empresas():
+    if session.get("rol") != "superadmin":
+        flash("Acceso solo para el administrador de la plataforma."); return redirect("/")
+    filas = db().execute("""SELECT e.id, e.nombre, e.creado,
+        (SELECT COUNT(*) FROM usuarios u WHERE u.empresa_id=e.id) usuarios,
+        (SELECT COUNT(*) FROM flota f WHERE f.empresa_id=e.id) flota,
+        (SELECT COUNT(*) FROM movimientos m WHERE m.empresa_id=e.id) movimientos
+        FROM empresas e ORDER BY e.id""").fetchall()
+    return render_template("empresas.html", empresas=filas)
+
+@app.route("/empresas/crear", methods=["POST"])
+def crear_empresa():
+    if session.get("rol") != "superadmin":
+        flash("Acceso solo para el administrador de la plataforma."); return redirect("/")
+    nombre_emp = request.form.get("empresa", "").strip()
+    email = request.form.get("email", "").strip().lower()
+    clave = request.form.get("clave", "").strip()
+    nombre_admin = request.form.get("nombre", "").strip()
+    if not nombre_emp or not email or len(clave) < 6:
+        flash("Completá empresa, email y una clave de al menos 6 caracteres.")
+        return redirect("/empresas")
+    d = db()
+    try:
+        rid = d.execute("INSERT INTO empresas(nombre,creado) VALUES(?,?) RETURNING id",
+                        (nombre_emp, datetime.now().strftime("%d/%m/%Y"))).fetchone()["id"]
+        d.execute("INSERT INTO usuarios(empresa_id,email,clave,nombre,rol) VALUES(?,?,?,?,?)",
+                  (rid, email, generate_password_hash(clave), nombre_admin or "Administrador", "admin"))
+        d.commit()
+        flash(f"Empresa '{nombre_emp}' creada. Admin: {email}")
+    except INTEGRITY_ERRORS:
+        d.rollback(); flash("Ese correo ya está en uso por otro usuario.")
+    return redirect("/empresas")
 
 init_db()
 if __name__ == "__main__":

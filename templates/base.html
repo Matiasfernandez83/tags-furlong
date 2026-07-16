@@ -155,6 +155,9 @@ hr{border:0;border-top:1px solid var(--borde);margin:14px 0}
     <a class="item {{ 'act' if request.path=='/gastos' }}" href="/gastos"><span class="ic">▭</span><span class="txt">Gastos Tarjetas</span></a>
     <a class="item {{ 'act' if request.path=='/reportes' }}" href="/reportes"><span class="ic">▦</span><span class="txt">Reportes</span></a>
     <a class="item {{ 'act' if request.path=='/config' }}" href="/config"><span class="ic">⚙</span><span class="txt">Configuración</span></a>
+    {% if session.rol == 'superadmin' %}
+    <a class="item {{ 'act' if request.path=='/empresas' }}" href="/empresas"><span class="ic">🏢</span><span class="txt">Empresas</span></a>
+    {% endif %}
   </div>
   <div class="estado">
     <div class="online">SISTEMA ONLINE</div>

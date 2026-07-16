@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block cuerpo %}
+<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px;margin-bottom:8px">
+  <div>
+    <h1 style="margin-bottom:2px">Empresas</h1>
+    <p class="mini">Panel de la plataforma · cada empresa ve únicamente sus propios datos.</p>
+  </div>
+  <div class="tarjeta oscura" style="margin:0;min-width:200px;display:flex;align-items:center;gap:14px">
+    <div style="width:44px;height:44px;background:rgba(223,255,0,.2);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px">🏢</div>
+    <div>
+      <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;font-weight:800">Empresas activas</div>
+      <div style="font-size:24px;font-weight:900;color:var(--lima)">{{ empresas|length }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="dos" style="grid-template-columns:1fr 1fr">
+  <div class="tarjeta">
+    <h3 style="margin-bottom:4px">➕ Alta de empresa cliente</h3>
+    <p class="mini">Se crea la empresa y su usuario administrador. Ese admin entra con su email y clave y solo ve los datos de su empresa.</p>
+    <form method="post" action="/empresas/crear">
+      <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#52525b">Nombre de la empresa</label>
+      <input type="text" name="empresa" required placeholder="Transportes del Sur SA" style="margin:6px 0 12px">
+      <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#52525b">Nombre del administrador</label>
+      <input type="text" name="nombre" placeholder="Juan Pérez" style="margin:6px 0 12px">
+      <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#52525b">Email del administrador</label>
+      <input type="email" name="email" required placeholder="admin@empresa.com" style="margin:6px 0 12px">
+      <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:#52525b">Clave inicial (mín. 6)</label>
+      <input type="password" name="clave" required style="margin:6px 0 14px">
+      <button class="btn" type="submit">Crear empresa</button>
+    </form>
+  </div>
+
+  <div class="tarjeta">
+    <h3 style="margin-bottom:14px">Empresas registradas</h3>
+    <div style="overflow-x:auto">
+    <table>
+      <tr><th>Empresa</th><th class="num">Usuarios</th><th class="num">Flota</th><th class="num">Movs.</th><th class="ocultar-mov">Alta</th></tr>
+      {% for e in empresas %}
+      <tr>
+        <td><b>{{ e.nombre }}</b></td>
+        <td class="num">{{ e.usuarios }}</td>
+        <td class="num">{{ e.flota }}</td>
+        <td class="num">{{ e.movimientos }}</td>
+        <td class="ocultar-mov" style="color:#a1a1aa">{{ e.creado }}</td>
+      </tr>
+      {% else %}<tr><td colspan="5" class="vacio">Todavía no hay empresas cargadas.</td></tr>{% endfor %}
+    </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
