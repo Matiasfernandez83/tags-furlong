@@ -55,6 +55,16 @@ Para probar contra Postgres localmente:
 
     DATABASE_URL='postgresql://usuario@host:puerto/base' python app.py
 
+## Estado actual del despliegue
+
+- **Supabase**: proyecto `tags-furlong` creado (ref `mssmzevutlgfqfwuntkp`, región `sa-east-1`).
+  - Rol de aplicación dedicado: `furlong_app` (LOGIN, con CREATE/USAGE en schema public).
+    La contraseña NO se versiona; está en la variable `DATABASE_URL` cargada en Render.
+  - La app crea su esquema y el usuario admin sola en el primer arranque.
+  - Conexión usada: **Session pooler** (IPv4), host `aws-0-sa-east-1.pooler.supabase.com:5432`,
+    usuario `furlong_app.mssmzevutlgfqfwuntkp`. (Si Render no conecta, probar `aws-1-...`.)
+- **Render**: falta crear el Web Service (Blueprint desde `main`) y pegar `DATABASE_URL`.
+
 ## Bitácora de cambios
 
 - **Versión inicial**: Flask + SQLite + pdfplumber, 5 módulos (Tablero, Importar,
