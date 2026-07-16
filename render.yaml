@@ -11,4 +11,4 @@ services:
       # Conexion PostgreSQL (Supabase, Session pooler). Se define aca para que Render
       # la aplique automaticamente al servicio en cada deploy (rol de app dedicado).
       - key: DATABASE_URL
-        value: postgresql://furlong_app.mssmzevutlgfqfwuntkp:Frlg7Tags2026Xq9Pd@aws-0-sa-east-1.pooler.supabase.com:5432/postgres
+        value: postgresql://furlong_app.mssmzevutlgfqfwuntkp:Frlg7Tags2026Xq9Pd@aws-1-sa-east-1.pooler.supabase.com:5432/postgres
