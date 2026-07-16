@@ -35,7 +35,7 @@
     <h3 style="margin-bottom:14px">Empresas registradas</h3>
     <div style="overflow-x:auto">
     <table>
-      <tr><th>Empresa</th><th class="num">Usuarios</th><th class="num">Flota</th><th class="num">Movs.</th><th class="ocultar-mov">Alta</th></tr>
+      <tr><th>Empresa</th><th class="num">Usuarios</th><th class="num">Flota</th><th class="num">Movs.</th><th class="ocultar-mov">Alta</th><th></th></tr>
       {% for e in empresas %}
       <tr>
         <td><b>{{ e.nombre }}</b></td>
@@ -43,8 +43,17 @@
         <td class="num">{{ e.flota }}</td>
         <td class="num">{{ e.movimientos }}</td>
         <td class="ocultar-mov" style="color:#a1a1aa">{{ e.creado }}</td>
+        <td class="num">
+          {% if e.id == session.empresa_id %}
+          <span class="mini">(vos)</span>
+          {% else %}
+          <form method="post" action="/empresas/borrar/{{ e.id }}" onsubmit="return confirm('¿Eliminar la empresa «{{ e.nombre }}» y TODOS sus datos (flota, movimientos, gastos y usuarios)? Esta acción no se puede deshacer.')">
+            <button class="btn chico sec" type="submit">Eliminar</button>
+          </form>
+          {% endif %}
+        </td>
       </tr>
-      {% else %}<tr><td colspan="5" class="vacio">Todavía no hay empresas cargadas.</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="6" class="vacio">Todavía no hay empresas cargadas.</td></tr>{% endfor %}
     </table>
     </div>
   </div>
