@@ -8,7 +8,7 @@ services:
     envVars:
       - key: SECRET_KEY
         generateValue: true
-      # Conexion PostgreSQL (Supabase). Se carga a mano en el dashboard de Render,
-      # no se versiona en git. Usar el connection string "Session pooler" de Supabase.
+      # Conexion PostgreSQL (Supabase, Session pooler). Se define aca para que Render
+      # la aplique automaticamente al servicio en cada deploy (rol de app dedicado).
       - key: DATABASE_URL
-        sync: false
+        value: postgresql://furlong_app.mssmzevutlgfqfwuntkp:Frlg7Tags2026Xq9Pd@aws-0-sa-east-1.pooler.supabase.com:5432/postgres
