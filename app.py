@@ -19,33 +19,57 @@ USE_PG = bool(DATABASE_URL)
 DB = os.environ.get("DB_PATH", "furlong.db")
 
 if USE_PG:
-    import psycopg2, psycopg2.extras
+    import psycopg2, psycopg2.extras, psycopg2.pool
+
+    # Pool de conexiones tibias: evita re-conectar y re-hacer el handshake SSL en cada
+    # request (clave porque la base esta lejos del servidor). Cada request toma una
+    # conexion del pool y la devuelve; conserva las transacciones por request.
+    _POOL = None
+    def _get_pool():
+        global _POOL
+        if _POOL is None:
+            kw = {"keepalives": 1, "keepalives_idle": 30, "keepalives_interval": 10, "keepalives_count": 3}
+            if "sslmode=" not in DATABASE_URL and not any(h in DATABASE_URL for h in ("localhost", "127.0.0.1")):
+                kw["sslmode"] = "require"
+            _POOL = psycopg2.pool.ThreadedConnectionPool(1, 5, DATABASE_URL, **kw)
+        return _POOL
 
     class _Cur:
-        """Envuelve un cursor de psycopg2 imitando la API de sqlite3 (fetchone/all, iter, lastrowid)."""
+        """Envuelve un cursor de psycopg2 imitando la API de sqlite3 (fetchone/all, iter)."""
         def __init__(self, c): self._c = c
         def fetchone(self): return self._c.fetchone()
         def fetchall(self): return self._c.fetchall()
         def __iter__(self): return iter(self._c.fetchall())
 
     class PGConn:
-        """Conexion PostgreSQL con la misma interfaz que se usa sobre sqlite3."""
+        """Conexion PostgreSQL (tomada del pool) con la misma interfaz que se usa sobre sqlite3."""
         def __init__(self):
-            kw = {}
-            if "sslmode=" not in DATABASE_URL and not any(h in DATABASE_URL for h in ("localhost", "127.0.0.1")):
-                kw["sslmode"] = "require"
-            self._conn = psycopg2.connect(DATABASE_URL, **kw)
+            self._conn = _get_pool().getconn()
+            self._bad = False
         def execute(self, sql, params=()):
-            cur = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-            cur.execute(sql.replace("?", "%s"), params)
-            return _Cur(cur)
+            try:
+                cur = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cur.execute(sql.replace("?", "%s"), params)
+                return _Cur(cur)
+            except (psycopg2.OperationalError, psycopg2.InterfaceError):
+                self._bad = True; raise
         def executemany(self, sql, seq):
-            cur = self._conn.cursor(); cur.executemany(sql.replace("?", "%s"), list(seq)); cur.close()
+            try:
+                cur = self._conn.cursor(); cur.executemany(sql.replace("?", "%s"), list(seq)); cur.close()
+            except (psycopg2.OperationalError, psycopg2.InterfaceError):
+                self._bad = True; raise
         def executescript(self, sql):
             cur = self._conn.cursor(); cur.execute(sql); cur.close()
         def commit(self): self._conn.commit()
-        def rollback(self): self._conn.rollback()
-        def close(self): self._conn.close()
+        def rollback(self):
+            try: self._conn.rollback()
+            except Exception: self._bad = True
+        def close(self):
+            # Devuelve la conexion al pool (o la descarta si quedo en mal estado).
+            try: _get_pool().putconn(self._conn, close=self._bad)
+            except Exception:
+                try: self._conn.close()
+                except Exception: pass
 
     INTEGRITY_ERRORS = (sqlite3.IntegrityError, psycopg2.IntegrityError)
 else:
@@ -734,6 +758,19 @@ def crear_empresa():
         flash(f"Empresa '{nombre_emp}' creada. Admin: {email}")
     except INTEGRITY_ERRORS:
         d.rollback(); flash("Ese correo ya está en uso por otro usuario.")
+    return redirect("/empresas")
+
+@app.route("/empresas/borrar/<int:eid>", methods=["POST"])
+def borrar_empresa(eid):
+    if session.get("rol") != "superadmin":
+        flash("Acceso solo para el administrador de la plataforma."); return redirect("/")
+    if eid == emp():
+        flash("No podés borrar tu propia empresa."); return redirect("/empresas")
+    d = db()
+    for tabla in ("movimientos", "flota", "archivos", "resumenes", "gastos", "usuarios"):
+        d.execute(f"DELETE FROM {tabla} WHERE empresa_id=?", (eid,))
+    d.execute("DELETE FROM empresas WHERE id=?", (eid,))
+    d.commit(); flash("Empresa y todos sus datos eliminados.")
     return redirect("/empresas")
 
 init_db()
