@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TAGs · Transporte Furlong</title>
+<title>PeajeControl Go</title>
 <style>
 :root{--rojo:#E30613;--negro:#141414;--panel:#1F2937;--gris:#64748b;--fondo:#f4f4f5;
   --borde:#e4e4e7;--verde:#16a34a;--lima:#DFFF00;--azul:#3b82f6}
@@ -18,8 +18,8 @@ aside{width:230px;background:var(--negro);color:#fff;flex-shrink:0;display:flex;
 aside .marca{padding:22px 20px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #262626}
 aside .logo{width:40px;height:40px;background:var(--rojo);border-radius:9px;display:flex;
   align-items:center;justify-content:center;font-size:20px}
-aside .marca b{font-size:16px;letter-spacing:1px;display:block;line-height:1.1}
-aside .marca span{font-size:10px;color:var(--rojo);font-weight:800;letter-spacing:2px}
+aside .marca b{font-size:15px;letter-spacing:.3px;display:block;line-height:1.1}
+aside .marca span{font-size:10px;color:var(--rojo);font-weight:800;letter-spacing:3px}
 aside .grupo{padding:16px 20px 6px;font-size:10px;color:#71717a;font-weight:800;letter-spacing:1.5px}
 aside a.item{display:flex;align-items:center;gap:12px;padding:12px 20px;color:#a1a1aa;
   text-decoration:none;font-weight:600;font-size:14px;border-left:3px solid transparent}
@@ -147,7 +147,7 @@ hr{border:0;border-top:1px solid var(--borde);margin:14px 0}
 <aside>
   <div class="marca">
     <div class="logo">🚚</div>
-    <div><b>FURLONG</b><span>LOGÍSTICA</span></div>
+    <div><b>PEAJECONTROL</b><span>GO</span></div>
   </div>
   <div class="nav-links">
     <a class="item {{ 'act' if request.path=='/' }}" href="/"><span class="ic">▤</span><span class="txt">Tablero</span></a>
@@ -169,14 +169,14 @@ hr{border:0;border-top:1px solid var(--borde);margin:14px 0}
   </div>
 </aside>
 <main>
-  <div class="topbar">TAGs · Transporte Furlong</div>
+  <div class="topbar">PeajeControl Go</div>
   <div class="contenido">
     {% with msgs = get_flashed_messages() %}
       {% for m in msgs %}<div class="aviso">{{ m }}</div>{% endfor %}
     {% endwith %}
     {% block cuerpo %}{% endblock %}
   </div>
-  <div class="pie">TAGs Transporte Furlong · Sector Compras · v3.0</div>
+  <div class="pie">PeajeControl Go · v3.0</div>
 </main>
 
 <div class="modal" id="modal">

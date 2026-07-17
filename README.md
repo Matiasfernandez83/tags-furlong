@@ -1,7 +1,7 @@
-# TAGs Transporte Furlong
+# PeajeControl Go
 
-Gestion de TAGs y peajes de flota. Lee facturas PDF (AUSA/AUSOL/TelePASE), extrae los pases,
-cruza cada TAG contra la base de flota y consolida gastos. **Sin IA, sin API keys.**
+Control de peajes y gastos de flota (SaaS multi-empresa). Lee facturas PDF (AUSA/AUSOL/TelePASE),
+extrae los pases, cruza cada TAG contra la base de flota y consolida gastos. **Sin IA, sin API keys.**
 Flask + pdfplumber. Base de datos: SQLite en local, PostgreSQL (Supabase) en produccion.
 
 ## Modulos
@@ -14,7 +14,7 @@ Flask + pdfplumber. Base de datos: SQLite en local, PostgreSQL (Supabase) en pro
 ## Correr local
     pip install -r requirements.txt
     python app.py
-Abrir http://localhost:5000 — usuario inicial: admin@transportefurlong.com.ar / admin
+Abrir http://localhost:5000 — usuario inicial: admin@peajecontrol.com / admin
 (cambiar la clave desde Configuracion apenas ingreses).
 
 ## Deploy en Render (plan free) + Supabase

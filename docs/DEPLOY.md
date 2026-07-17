@@ -40,7 +40,7 @@ Required"). Para mantenerlo **gratis y con datos persistentes** se migró la bas
 5. **Apply** y esperar el build (2–4 min).
 
 ### 3) Primer ingreso
-- Usuario inicial: `admin@transportefurlong.com.ar` / clave `admin`.
+- Usuario inicial: `admin@peajecontrol.com` / clave `admin`.
 - Cambiar la clave desde **Configuración** apenas ingreses.
 
 > Nota plan free de Render: el servicio se duerme tras 15 min sin uso y el primer

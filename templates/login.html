@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ingreso · TAGs Furlong</title>
+<title>Ingreso · PeajeControl Go</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;background:#141414;
@@ -27,14 +27,14 @@ button:hover{background:#c00511}
 <body>
 <form class="caja" method="post">
   <div class="logo">🚚</div>
-  <div class="sub">FURLONG LOGÍSTICA</div>
-  <h1>Ingreso corporativo</h1>
-  <p>Gestión de TAGs y peajes de flota</p>
+  <div class="sub">PEAJECONTROL GO</div>
+  <h1>Iniciar sesión</h1>
+  <p>Control de peajes y gastos de flota</p>
   {% with msgs = get_flashed_messages() %}
     {% for m in msgs %}<div class="err">{{ m }}</div>{% endfor %}
   {% endwith %}
   <label>Correo</label>
-  <input type="email" name="email" required autofocus value="admin@transportefurlong.com.ar">
+  <input type="email" name="email" required autofocus placeholder="tu@email.com">
   <label>Clave</label>
   <input type="password" name="clave" required>
   <button type="submit">Ingresar</button>
