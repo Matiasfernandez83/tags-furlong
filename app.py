@@ -377,8 +377,12 @@ def emp():
 
 @app.before_request
 def requiere_login():
-    if request.endpoint not in ("login", "static") and not session.get("uid"):
+    if request.endpoint not in ("login", "static", "landing") and not session.get("uid"):
         return redirect("/login")
+
+@app.route("/landing")
+def landing():
+    return render_template("landing.html")
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
