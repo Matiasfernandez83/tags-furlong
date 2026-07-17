@@ -173,6 +173,11 @@ def init_db():
         # El admin original pasa a superadmin (contempla el email viejo y el nuevo).
         con.execute("UPDATE usuarios SET rol='superadmin' WHERE email IN (?,?) AND rol='admin'",
                     ("admin@peajecontrol.com", "admin@transportefurlong.com.ar"))
+    # Transicion de marca (idempotente): renombra el admin y la empresa por defecto viejos.
+    if not con.execute("SELECT 1 FROM usuarios WHERE email='admin@peajecontrol.com'").fetchone():
+        con.execute("UPDATE usuarios SET email='admin@peajecontrol.com', nombre='Administrador' "
+                    "WHERE email='admin@transportefurlong.com.ar'")
+    con.execute("UPDATE empresas SET nombre='Administración' WHERE nombre='Transporte Furlong'")
     con.commit(); con.close()
 
 # ================= UTILIDADES =================
