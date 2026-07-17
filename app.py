@@ -1,4 +1,4 @@
-# TAGs Transporte Furlong - Flask + pdfplumber. BD: SQLite (dev) o PostgreSQL (prod, via DATABASE_URL). Sin IA, sin API keys.
+# PeajeControl Go - Flask + pdfplumber. BD: SQLite (dev) o PostgreSQL (prod, via DATABASE_URL). Sin IA, sin API keys.
 import csv, io, os, re, sqlite3, base64, json
 from datetime import datetime
 from flask import Flask, g, request, redirect, session, render_template, send_file, flash, jsonify
@@ -161,18 +161,18 @@ def init_db():
         emp_id = row["id"]
     else:
         emp_id = con.execute("INSERT INTO empresas(nombre,creado) VALUES(?,?) RETURNING id",
-                             ("Transporte Furlong", datetime.now().strftime("%d/%m/%Y"))).fetchone()["id"]
+                             ("Administración", datetime.now().strftime("%d/%m/%Y"))).fetchone()["id"]
     # Asigna a la empresa por defecto cualquier dato preexistente (migracion).
     for tabla in TABLAS_TENANT:
         con.execute(f"UPDATE {tabla} SET empresa_id=? WHERE empresa_id IS NULL", (emp_id,))
     if not con.execute("SELECT 1 FROM usuarios").fetchone():
         con.execute("INSERT INTO usuarios(empresa_id,email,clave,nombre,rol) VALUES(?,?,?,?,?)",
-                    (emp_id, "admin@transportefurlong.com.ar", generate_password_hash("admin"),
-                     "Admin Furlong", "superadmin"))
+                    (emp_id, "admin@peajecontrol.com", generate_password_hash("admin"),
+                     "Administrador", "superadmin"))
     else:
-        # El admin original pasa a superadmin para poder gestionar empresas.
-        con.execute("UPDATE usuarios SET rol='superadmin' WHERE email=? AND rol='admin'",
-                    ("admin@transportefurlong.com.ar",))
+        # El admin original pasa a superadmin (contempla el email viejo y el nuevo).
+        con.execute("UPDATE usuarios SET rol='superadmin' WHERE email IN (?,?) AND rol='admin'",
+                    ("admin@peajecontrol.com", "admin@transportefurlong.com.ar"))
     con.commit(); con.close()
 
 # ================= UTILIDADES =================
