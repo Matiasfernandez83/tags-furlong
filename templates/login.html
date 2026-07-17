@@ -9,10 +9,13 @@
 body{font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;background:#141414;
   min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
 .caja{background:#fff;border-radius:14px;padding:36px;width:100%;max-width:390px}
-.logo{width:52px;height:52px;background:#E30613;border-radius:12px;display:flex;align-items:center;
-  justify-content:center;font-size:26px;margin-bottom:16px}
+.wm{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+.wm-stack{display:flex;flex-direction:column;line-height:.86;font-weight:800;color:#141414;letter-spacing:.4px}
+.wm-stack div{font-size:22px}
+.wm-go{font-family:Georgia,'Times New Roman',serif;font-size:34px;font-weight:900;font-style:italic;
+  color:#E30613;letter-spacing:-1px;line-height:.9}
+.wm-go b{font-size:24px;vertical-align:top;font-style:normal}
 h1{font-weight:900;letter-spacing:1px;font-size:20px}
-.sub{color:#E30613;font-size:11px;font-weight:800;letter-spacing:2px;margin-bottom:6px}
 p{color:#71717a;font-size:13px;margin-bottom:22px}
 label{display:block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;
   color:#52525b;margin-bottom:6px}
@@ -26,8 +29,10 @@ button:hover{background:#c00511}
 </head>
 <body>
 <form class="caja" method="post">
-  <div class="logo">🚚</div>
-  <div class="sub">PEAJECONTROL GO</div>
+  <div class="wm">
+    <div class="wm-stack"><div>Peajes</div><div>Control</div></div>
+    <div class="wm-go"><b>+</b>GO</div>
+  </div>
   <h1>Iniciar sesión</h1>
   <p>Control de peajes y gastos de flota</p>
   {% with msgs = get_flashed_messages() %}
